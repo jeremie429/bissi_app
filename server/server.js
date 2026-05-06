@@ -1333,7 +1333,7 @@ app.get('/api/test', async (req, res) => {
 // ==================== START SERVER ====================
 
 async function startServer() {
-    await initDatabase();
+    //await initDatabase();
     
     app.listen(PORT, () => {
         console.log(`========================================`);
