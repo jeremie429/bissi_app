@@ -1322,6 +1322,10 @@ app.get('/api/invoices/:id/export', async (req, res) => {
     }
 });
 
+app.get('/api/test', async (req, res) => {
+    res.json({ success: true, message: 'API is working' });
+});
+
 // ==================== START SERVER ====================
 
 async function startServer() {
