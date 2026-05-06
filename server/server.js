@@ -19,6 +19,17 @@ const PORT = 3000;
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+// Source - https://stackoverflow.com/a/46529810
+// Posted by Parkar, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-05-06, License - CC BY-SA 4.0
+
+/*
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*'); // Or restrict to 'http://localhost:8080'
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});*/
+
 
 // MySQL Connection Configuration
 const dbConfig = {
