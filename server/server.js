@@ -4,7 +4,10 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { CanvasFactory } = require( "pdf-parse/worker"); 
 const { PDFParse } = require('pdf-parse');
+// or equivalent for your PDF library
+
 const Tesseract = require('tesseract.js');
 const fs = require('fs');
 const { log } = require('console');
@@ -929,8 +932,9 @@ app.post('/api/import/pdf', async (req, res) => {
         } else {
             return res.status(400).json({ success: false, message: 'No file provided' });
         }
-        
-        const pdfParser = new PDFParse({url: filePath, data: pdfBuffer });
+        //CanvasFactory.setCanvasFactory(new NodeCanvasFactory());
+
+        const pdfParser = new PDFParse({url: filePath, data: pdfBuffer, CanvasFactory: CanvasFactory });
         const rest = await pdfParser.getText();
         const text = rest.text;
        /* const table = (await pdfParser.getTable()).pages[0].tables[0];
@@ -1129,7 +1133,7 @@ app.post('/api/analyze/document', async (req, res) => {
         if (isPdf) {
             try {
                 const pdfBuffer = Buffer.from(base64, 'base64');
-                const pdfParser = new PDFParse({ data: pdfBuffer });
+                const pdfParser = new PDFParse({ data: pdfBuffer,CanvasFactory: CanvasFactory });
                 const pdfResult = await pdfParser.getText();
                 const text = pdfResult.text;
                 
