@@ -15,7 +15,10 @@ const path = require('path');
 const { createWorker } = require ('tesseract.js');
 
 const {MongoClient} = require('mongodb');
-const uri = "mongodb+srv://developpeurttj_db_user:vpJMoVMh6nFzaJgt@clusterdev.qiicujq.mongodb.net/?appName=ClusterDev" 
+require('dotenv').config();
+
+const uri = process.env.MONGODB_URI;
+
 const app = express();
 const PORT = 3000;
 
@@ -25,6 +28,9 @@ const client = new MongoClient(uri);
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+
+
+
 // Source - https://stackoverflow.com/a/46529810
 // Posted by Parkar, modified by community. See post 'Timeline' for change history
 // Retrieved 2026-05-06, License - CC BY-SA 4.0
