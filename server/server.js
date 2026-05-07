@@ -14,9 +14,12 @@ const { log } = require('console');
 const path = require('path');
 const { createWorker } = require ('tesseract.js');
 
-
+const {MongoClient} = require('mongodb');
+const uri = "mongodb+srv://developpeurttj_db_user:vpJMoVMh6nFzaJgt@clusterdev.qiicujq.mongodb.net/?appName=ClusterDev" 
 const app = express();
 const PORT = 3000;
+
+const client = new MongoClient(uri);
 
 // Middleware - increased limit for PDF base64 data
 app.use(cors());
@@ -208,6 +211,104 @@ async function initDatabase() {
     }
 }
 
+const userSchema = {
+            name: String,
+            email: String,
+            password: String,
+            role: String,
+            created_at: Date,
+            updated_at: Date
+        };
+        const clientSchema = {
+            name: String,
+            line1: String,
+            line2: String,
+            line3: String,
+            line4: String,
+            created_at: Date,
+            updated_at: Date
+        };
+
+        const invoiceSchema = {
+            invoice_number: String,
+            invoice_date: Date,
+            client_id: String,
+            client_name: String,
+            client_line1: String,
+            client_line2: String,
+            client_line3: String,
+            client_line4: String,
+            po_ref: String,
+            subtotal: Number,
+            discount_percent: Number,
+            total: Number,
+            created_by: String,
+            created_at: Date
+        };
+
+        const invoiceItemSchema = {
+            invoice_id: String,
+            sn: Number,
+            designation: String,
+            quantity: Number,
+            unit: String,
+            unit_price: Number,
+            total: Number
+        };
+        const itemsSchema = {
+            code: String,
+            name: String,
+            category: String,
+            unit: String,
+            price: Number,
+            flag: String,
+            description: String,
+            created_at: Date,
+            updated_at: Date
+        };
+
+        const quotationSchema = {
+            quote_number: String,
+            total: Number,
+            created_by: String,
+            created_at: Date
+        };
+
+        const quotationItemSchema = {
+            quotation_id: String,
+            item_id: String,
+            item_code: String,
+            item_name: String,
+            unit_price: Number,
+            quantity: Number,
+            total: Number,
+            found: Boolean
+        };
+
+//initialize mongodb database and tables with the same structure of msql database
+async function initializetMongoDatabase() {
+    try {   
+
+        
+
+        await client.connect();
+        const db = client.db('bissi_app');
+        // Create collections if they don't exist
+        await db.createCollection('users', { validator: { $jsonSchema: userSchema } });
+        await db.createCollection('clients', { validator: { $jsonSchema: clientSchema } });
+        await db.createCollection('invoices', { validator: { $jsonSchema: invoiceSchema } });
+        await db.createCollection('invoice_items', { validator: { $jsonSchema: invoiceItemSchema } });
+        await db.createCollection('items', { validator: { $jsonSchema: itemsSchema } });
+        await db.createCollection('quotations', { validator: { $jsonSchema: quotationSchema } });
+        await db.createCollection('quotation_items', { validator: { $jsonSchema: quotationItemSchema } });
+        console.log('✓ MongoDB database and collections initialized');
+    } catch (error) {
+        console.error('✗ MongoDB initialization error:', error.message);
+    } finally {
+        await client.close();
+    }
+}
+
 // ==================== AUTH ROUTES ====================
 
 // Login
@@ -216,17 +317,58 @@ app.post('/api/login', async (req, res) => {
         const { email, password } = req.body;
         
         // Check for demo account
-        if (email === 'admin@ship.com' && password === 'admin123') {
-            const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
-            if (users.length === 0) {
+        
+            //const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
+           try {
+             await client.connect();
+                const db = client.db('bissi_app');
+                const collection = db.collection('users');
+                    const mongoUser = await collection.findOne({ email: email });
+                    if (!mongoUser) {
+                        /*await collection.insertOne({
+                            name: 'Super Admin',
+                            email: email,
+                            password: password,
+                            role: 'admin',
+                            created_at: new Date(),
+                            updated_at: new Date()
+                        });*/
+                        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+                    }
+                    if (mongoUser.password !== password) {
+                        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+                    }
+                    const user = {
+                        id: mongoUser._id,
+                        name: mongoUser.name,
+                        email: mongoUser.email,
+                        role: mongoUser.role
+                    }
+                    res.json({
+                        success: true,
+                        user: user
+                    });
+                    console.log('✓ User logged in:', email);
+           } catch (error) {
+            console.error('MongoDB login error:', error);
+            res.status(500).json({ success: false, message: 'Mongo Db error' });
+           }finally{
+            await client.close();
+           }
+           
+           
+
+
+            /*if (users.length === 0) {
                 // Create demo user
                 await pool.execute(
                     'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-                    ['Demo Admin', email, password, 'admin']
+                    ['Super Admin', email, password, 'admin']
                 );
-            }
-        }
+            }*/
         
+        /*
         const [users] = await pool.execute(
             'SELECT * FROM users WHERE email = ? AND password = ?',
             [email, password]
@@ -247,7 +389,7 @@ app.post('/api/login', async (req, res) => {
                 role: user.role
             }
         });
-        console.log('✓ User logged in:', email);
+        console.log('✓ User logged in:', email);*/
         
     } catch (error) {
         console.error('Login error:', error);
@@ -259,9 +401,34 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/register', async (req, res) => {
     try {
         const { name, email, password, role } = req.body;
-        
+
+        try{
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('users');
+
+        const existingUser = await collection.findOne({ email: email });
+        if (existingUser) {
+            return res.status(400).json({ success: false, message: 'Email already registered' });
+        }
+        await collection.insertOne({
+            name: name,
+            email: email,
+            password: password,
+            role: role,
+            created_at: new Date(),
+            updated_at: new Date()
+        });
+        return res.json({ success: true, message: 'Account created successfully' });
+
+        }catch(error){
+            console.error('MongoDB register error:', error);
+            res.status(500).json({ success: false, message: 'Mongo Db error' });
+        }finally{
+            await client.close();
+        }
         // Check if email exists
-        const [existing] = await pool.execute('SELECT id FROM users WHERE email = ?', [email]);
+      /*  const [existing] = await pool.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) {
             return res.status(400).json({ success: false, message: 'Email already registered' });
         }
@@ -271,7 +438,7 @@ app.post('/api/register', async (req, res) => {
             [name, email, password, role]
         );
         
-        res.json({ success: true, message: 'Account created successfully' });
+        res.json({ success: true, message: 'Account created successfully' });*/
         
     } catch (error) {
         console.error('Register error:', error);
@@ -285,17 +452,29 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/items', async (req, res) => {
     try {
         const { flag } = req.query;
-        let sql = 'SELECT * FROM items';
+       /* let sql = 'SELECT * FROM items';
         const params = [];
         
         if (flag) {
             sql += ' WHERE flag = ?';
             params.push(flag);
+        }*/
+        
+        //sql += ' ORDER BY created_at DESC';
+        try {
+            await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+        const items = await collection.find(flag ? { flag: flag } : {}).sort({ created_at: -1 }).toArray();
+        //const [items] = await pool.execute(sql, params);
+        res.json({ success: true, items });
+        } catch (error) {
+            console.error('Get items error:', error);
+            res.status(500).json({ success: false, message: 'MongoDB error' });
+        }finally{
+            await client.close();
         }
         
-        sql += ' ORDER BY created_at DESC';
-        const [items] = await pool.execute(sql, params);
-        res.json({ success: true, items });
     } catch (error) {
         console.error('Get items error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -305,23 +484,32 @@ app.get('/api/items', async (req, res) => {
 // Get all available flags
 app.get('/api/flags', async (req, res) => {
     try {
-        const [flags] = await pool.execute('SELECT DISTINCT flag FROM items ORDER BY flag');
-        const flagList = flags.map(f => f.flag);
-        res.json({ success: true, flags: flagList });
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+        const flags = await collection.distinct('flag');
+        //const [flags] = await pool.execute('SELECT DISTINCT flag FROM items ORDER BY flag');
+        //const flagList = flags.map(f => f.flag);
+        res.json({ success: true, flags: flags });
     } catch (error) {
         console.error('Get flags error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }finally{
+        await client.close();
     }
 });
 
 // Search items for autocompletion
 app.get('/api/items/search', async (req, res) => {
     try {
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
         const { q } = req.query;
         if (!q || q.length < 2) {
             return res.json({ success: true, items: [] });
         }
-        
+        /*
         const sql = `
             SELECT id, code, name, category, unit, price, description 
             FROM items 
@@ -334,10 +522,16 @@ app.get('/api/items/search', async (req, res) => {
                 END,
                 code, name
             LIMIT 20
-        `;
+        `;*/
         const searchTerm = `%${q}%`;
         const exactMatch = `${q}%`;
-        const [items] = await pool.execute(sql, [searchTerm, searchTerm, searchTerm, exactMatch, exactMatch]);
+        const items = await collection.find({
+            $or: [
+                { code: { $regex: searchTerm, $options: 'i' } },
+                { name: { $regex: searchTerm, $options: 'i' } },
+                { category: { $regex: searchTerm, $options: 'i' } }
+            ]        }).sort({ created_at: -1 }).limit(20).toArray();
+        //const [items] = await pool.execute(sql, [searchTerm, searchTerm, searchTerm, exactMatch, exactMatch]);
         
         res.json({ success: true, items });
     } catch (error) {
@@ -351,22 +545,24 @@ app.post('/api/items', async (req, res) => {
     try {
         const { code, name, category, unit, price, description, currency, flag } = req.body;
         
-        // Validate IMPA code format (XX.XX.XX or XXXX-XX-XX)
-       /* const impaPattern = /^(\d{2})\.(\d{2})\.(\d{2})$|^(\d{4})-(\d{2})-(\d{2})$/;
-        if (!impaPattern.test(code)) {
-            return res.status(400).json({ success: false, message: 'Invalid IMPA code format. Use XX.XX.XX or XXXX-XX-XX format' });
-        }*/
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+        const existing = await collection.findOne({ name: name, currency: currency });
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Item with same name and currency already exists' });
+        }
         
-        // Check if code exists
-       /* const [existing] = await pool.execute('SELECT id FROM items WHERE code = ?', [code]);
-        if (existing.length > 0) {
-            return res.status(400).json({ success: false, message: 'Item code already exists' });
-        }*/
-        
-        await pool.execute(
-            'INSERT INTO items (code, name, category, unit, price, description, currency, flag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [code, name, category, unit, price, description || '', currency || 'EUR', flag || 'general']
-        );
+        await collection.insertOne({
+            code,
+            name,
+            category,
+            unit,
+            price,
+            description: description || '',
+            currency: currency || 'EUR',
+            flag: flag || 'general'
+        });
         
         res.json({ success: true, message: 'Item added successfully' });
         
@@ -407,19 +603,34 @@ app.post('/api/items/bulk', async (req, res) => {
                 results.failed.push({ code, name, reason: 'Invalid IMPA code format' });
                 continue;
             }*/
-            
-            // Check for duplicates
-            const [existing] = await pool.execute('SELECT id FROM items WHERE name = ? AND currency = ?', [name, currency]);
-            if (existing.length > 0) {
+
+                await client.connect();
+        const db = client.db('bissi_app');
+            const collection = db.collection('items');
+            const existing = await collection.findOne({ name: name, currency: currency });
+
+            if(existing){
                 results.duplicates.push({ code, name, reason: 'Item already exists' });
                 continue;
             }
+            // Check for duplicates
+          //  const [existing] = await pool.execute('SELECT id FROM items WHERE name = ? AND currency = ?', [name, currency]);
+            /*if (existing.length > 0) {
+                results.duplicates.push({ code, name, reason: 'Item already exists' });
+                continue;
+            }*/
             
             // Insert item
-            await pool.execute(
-                'INSERT INTO items (code, name, category, unit, price, description, currency, flag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [code, name, category, unit, price, description || '', currency || 'EUR', flag || 'general']
-            );
+            await collection.insertOne({
+                code,
+                name,
+                category,
+                unit,
+                price,
+                description: description || '',
+                currency: currency || 'EUR',
+                flag: flag || 'general'
+            });
             
             results.success.push({ code, name });
         }
@@ -503,8 +714,16 @@ app.put('/api/items/:id/price', async (req, res) => {
         const { code } = req.body;
 
           
-        
-        await pool.execute('UPDATE items SET price = ?, name = ?, code = ? WHERE id = ?', [price, name, code, id]);
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+            const existing = await collection.findOne({ _id: new ObjectId(id) });
+            if (!existing) {
+                return res.status(404).json({ success: false, message: 'Item not found' });
+            }
+            await collection.updateOne({ _id: new ObjectId(id) }, { $set: { price: price, name: name, code: code } });
+/*
+        await pool.execute('UPDATE items SET price = ?, name = ?, code = ? WHERE id = ?', [price, name, code, id]);*/
         
         res.json({ success: true, message: 'Item updated successfully' });
         
@@ -519,12 +738,20 @@ app.put('/api/items/:id/price', async (req, res) => {
 // Get all quotations
 app.get('/api/quotations', async (req, res) => {
     try {
-        const [quotations] = await pool.execute(`
-            SELECT q.*, u.name as user_name 
-            FROM quotations q 
-            LEFT JOIN users u ON q.created_by = u.id 
-            ORDER BY q.created_at DESC
-        `);
+        await client.connect();
+        const db = client.db('bissi_app');
+        const quotationsCollection = db.collection('quotations');
+        const usersCollection = db.collection('users');
+        const quotations = await quotationsCollection.aggregate([
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'created_by',
+                    foreignField: '_id',
+                    as: 'user'
+                }
+            }
+        ]).toArray();
         res.json({ success: true, quotations });
     } catch (error) {
         console.error('Get quotations error:', error);
@@ -532,6 +759,49 @@ app.get('/api/quotations', async (req, res) => {
     }
 });
 
+// Create quotation
+app.post('/api/quotations', async (req, res) => {
+    try {
+        const { items, createdBy } = req.body;
+        await client.connect();
+        const db = client.db('bissi_app');
+        const quotationsCollection = db.collection('quotations');
+        const usersCollection = db.collection('users');
+            // Generate quote number
+        const count = await quotationsCollection.countDocuments();
+        const quoteNumber = `QUOTE-${new Date().getFullYear()}-${String(count + 1).padStart(3, '0')}`;
+        // Calculate total
+        const total = items.reduce((sum, item) => sum + (item.total || 0), 0);
+        const result = await quotationsCollection.insertOne({
+            quote_number: quoteNumber,
+            total: total,
+            created_by: createdBy
+        });
+        // Insert quotation items
+        const quotationId = result.insertedId;
+        const quotationItemsCollection = db.collection('quotation_items');
+        for (const item of items) {
+            await quotationItemsCollection.insertOne({
+                quotation_id: quotationId,
+                item_id: item.id || null,
+                item_code: item.code,
+                item_name: item.name,
+                unit_price: item.price,
+                quantity: item.quantity,
+                total: item.total,
+                found: item.found
+            });
+        }
+
+        // ... (rest of the code)
+        res.json({ success: true, message: 'Quotation saved successfully', quoteNumber });
+        // res.json({ success: true, quotations });
+    } catch (error) {
+        console.error('Get quotations error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+/*
 // Create quotation
 app.post('/api/quotations', async (req, res) => {
     try {
@@ -566,7 +836,7 @@ app.post('/api/quotations', async (req, res) => {
         console.error('Create quotation error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
-});
+});*/
 
 // Save or update client
 app.post('/api/clients', async (req, res) => {
@@ -576,19 +846,33 @@ app.post('/api/clients', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Client name is required' });
         }
 
+        await client.connect();
+            const db = client.db('bissi_app');
+            const collection = db.collection('clients');
         if (id) {
-            await pool.execute(
+            
+            await collection.updateOne({ _id: new ObjectId(id) }, { $set: { name, line1: line1 || '', line2: line2 || '', line3: line3 || '', line4: line4 || '' } });
+
+            /*await pool.execute(
                 'UPDATE clients SET name = ?, line1 = ?, line2 = ?, line3 = ?, line4 = ? WHERE id = ?',
                 [name, line1 || '', line2 || '', line3 || '', line4 || '', id]
-            );
+            );*/
             return res.json({ success: true, client: { id, name, line1, line2, line3, line4 } });
         }
+       const result =  await collection.insertOne({
+            name,
+            line1: line1 || '',
+            line2: line2 || '',
+            line3: line3 || '',
+            line4: line4 || ''
+        });
 
-        const [result] = await pool.execute(
+        res.json({ success: true, client: { id: result.insertedId, name, line1, line2, line3, line4 } });
+       /* const [result] = await pool.execute(
             'INSERT INTO clients (name, line1, line2, line3, line4) VALUES (?, ?, ?, ?, ?)',
             [name, line1 || '', line2 || '', line3 || '', line4 || '']
-        );
-        res.json({ success: true, client: { id: result.insertId, name, line1, line2, line3, line4 } });
+        );*/
+        /*res.json({ success: true, client: { id: result.insertId, name, line1, line2, line3, line4 } });*/
     } catch (error) {
         console.error('Save client error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -608,7 +892,20 @@ app.get('/api/clients/search', async (req, res) => {
             'SELECT * FROM clients WHERE name LIKE ? OR line1 LIKE ? OR line2 LIKE ? OR line3 LIKE ? OR line4 LIKE ? ORDER BY updated_at DESC LIMIT 10',
             [searchValue, searchValue, searchValue, searchValue, searchValue]
         );
-        res.json({ success: true, clients });
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('clients');
+        const mongoClients = await collection.find({
+            $or: [
+                { name: { $regex: searchValue, $options: 'i' } },
+                { line1: { $regex: searchValue, $options: 'i' } },
+                { line2: { $regex: searchValue, $options: 'i' } },
+                { line3: { $regex: searchValue, $options: 'i' } },
+                { line4: { $regex: searchValue, $options: 'i' } }
+            ]
+        }).toArray();
+
+        res.json({ success: true, clients: mongoClients });
     } catch (error) {
         console.error('Client search error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -628,11 +925,21 @@ app.get('/api/invoices/next-number', async (req, res) => {
             [searchPattern]
         );
 
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('invoices');
+        const mongoInvoice = await collection.find({ invoice_number: { $regex: searchPattern } }).sort({ _id: -1 }).limit(1).toArray();
+
+
         let nextIndex = 1;
-        if (rows.length > 0) {
-            const lastNumber = rows[0].invoice_number.split('/')[0];
+        if(mongoInvoice.length > 0){
+            const lastNumber = mongoInvoice[0].invoice_number.split('/')[0];
             nextIndex = parseInt(lastNumber, 10) + 1;
         }
+        /*if (rows.length > 0) {
+            const lastNumber = rows[0].invoice_number.split('/')[0];
+            nextIndex = parseInt(lastNumber, 10) + 1;
+        }*/
 
         const invoiceNumber = `${String(nextIndex).padStart(3, '0')}/${month}/${year}`;
         res.json({ success: true, invoiceNumber });
@@ -649,6 +956,10 @@ app.get('/api/invoices', async (req, res) => {
         let sql = 'SELECT id, invoice_number, invoice_date, client_name, subtotal, discount_percent, total, po_ref FROM invoices';
         const params = [];
 
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('invoices');
+        /*
         if (query) {
             const searchValue = `%${query}%`;
             sql += ' WHERE invoice_number LIKE ? OR client_name LIKE ?';
@@ -656,8 +967,14 @@ app.get('/api/invoices', async (req, res) => {
         }
 
         sql += ' ORDER BY id DESC LIMIT 200';
-        const [invoices] = await pool.execute(sql, params);
-        res.json({ success: true, invoices });
+        const [invoices] = await pool.execute(sql, params);*/
+        const mongoInvoices = await collection.find(query ? {
+            $or: [
+                { invoice_number: { $regex: `%${query}%`, $options: 'i' } },
+                { client_name: { $regex: `%${query}%`, $options: 'i' } }
+            ]
+        } : {}).sort({ _id: -1 }).limit(200).toArray();
+        res.json({ success: true, invoices: mongoInvoices });
     } catch (error) {
         console.error('Invoice list error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -672,17 +989,25 @@ app.get('/api/invoices/:id', async (req, res) => {
             'SELECT * FROM invoices WHERE id = ?',
             [invoiceId]
         );
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('invoices');
+            const mongoInvoice = await collection.find({ _id: new ObjectId(invoiceId) }).toArray();
+            if(mongoInvoice.length === 0){
+                return res.status(404).json({ success: false, message: 'Invoice not found' });
+            }
 
-        if (invoices.length === 0) {
+       /* if (invoices.length === 0) {
             return res.status(404).json({ success: false, message: 'Invoice not found' });
-        }
+        }*/
 
-        const [items] = await pool.execute(
+        /*const [items] = await pool.execute(
             'SELECT sn, designation, quantity, unit, unit_price, total FROM invoice_items WHERE invoice_id = ? ORDER BY sn',
             [invoiceId]
-        );
+        );*/
 
-        res.json({ success: true, invoice: invoices[0], items });
+        const items = await db.collection('invoice_items').find({ invoice_id: new ObjectId(invoiceId) }).sort({ sn: 1 }).toArray();
+        res.json({ success: true, invoice: mongoInvoice[0], items });
     } catch (error) {
         console.error('Invoice detail error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -707,20 +1032,52 @@ app.post('/api/invoices', async (req, res) => {
             createdBy = isNaN(parsed) ? null : parsed;
         }
 
-        const [result] = await pool.execute(
+        /*const [result] = await pool.execute(
             'INSERT INTO invoices (invoice_number, invoice_date, client_id, client_name, client_line1, client_line2, client_line3, client_line4, subtotal, discount_percent, total, created_by, po_ref, invoice_currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [invoiceNumber, invoiceDate, clientId || null, clientName, clientLine1 || '', clientLine2 || '', clientLine3 || '', clientLine4 || '', subTotal, discountPercent || 0, total, createdBy, poRef || '', req.body.invoiceCurrency || 'EUR']
-        );
+        );*/
 
-        const invoiceId = result.insertId;
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('invoice_items');
+        const result = await db.collection('invoices').insertOne({
+            invoice_number: invoiceNumber,
+            invoice_date: invoiceDate,
+            client_id: clientId ? new ObjectId(clientId) : null,
+            client_name: clientName,
+            client_line1: clientLine1 || '',
+            client_line2: clientLine2 || '',
+            client_line3: clientLine3 || '',
+            client_line4: clientLine4 || '',
+            subtotal: subTotal,
+            discount_percent: discountPercent || 0,
+            total: total,
+            created_by: createdBy,
+            po_ref: poRef || '',
+            invoice_currency: req.body.invoiceCurrency || 'EUR'
+        });
+        const invoiceId = result.insertedId;
+
+      //  const invoiceId = result.insertId;
         for (const item of items) {
-            await pool.execute(
+            /*await pool.execute(
                 'INSERT INTO invoice_items (invoice_id, sn, designation, quantity, unit, unit_price, total) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 [invoiceId, item.sn, item.designation, item.quantity, item.unit, item.unitPrice, item.total]
-            );
+            );*/
+            await collection.insertOne({
+                invoice_id: invoiceId,
+                sn: item.sn,
+                designation: item.designation,
+                quantity: item.quantity,
+                unit: item.unit,
+                unit_price: item.unitPrice,
+                total: item.total
+            });
+
         }
 
         res.json({ success: true, message: 'Invoice saved successfully', invoiceNumber });
+       // res.json({ success: true, message: 'Invoice saved successfully', invoiceNumber });
     } catch (error) {
         console.error('Create invoice error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -731,20 +1088,32 @@ app.post('/api/invoices', async (req, res) => {
 
 app.get('/api/stats', async (req, res) => {
     try {
+       /* 
         const [itemsCount] = await pool.execute('SELECT COUNT(*) as count FROM items');
         const [quotesCount] = await pool.execute('SELECT COUNT(*) as count FROM quotations');
         const [usersCount] = await pool.execute('SELECT COUNT(*) as count FROM users');
-        const [totalValue] = await pool.execute('SELECT SUM(price) as total FROM items');
-        
+        const [totalValue] = await pool.execute('SELECT SUM(price) as total FROM items');*/
+        await client.connect();
+
+        const db = client.db('bissi_app');
+            const itemsCount = await db.collection('items').countDocuments();
+        const quotesCount = await db.collection('quotations').countDocuments();
+        const usersCount = await db.collection('users').countDocuments();
+        const totalValueAgg = await db.collection('items').aggregate([
+            { $group: { _id: null, total: { $sum: '$price' } } }
+        ]).toArray();
+        const totalValue = totalValueAgg[0] ? totalValueAgg[0].total : 0;
+
         res.json({
             success: true,
-            stats: {
-                totalItems: itemsCount[0].count,
-                totalQuotes: quotesCount[0].count,
-                totalUsers: usersCount[0].count || 1,
-                totalValue: totalValue[0].total || 0
+                stats: {
+                totalItems: itemsCount,
+                totalQuotes: quotesCount,
+                totalUsers: usersCount || 1,
+                totalValue: totalValue || 0
             }
         });
+
     } catch (error) {
         console.error('Get stats error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -1252,27 +1621,33 @@ app.get('/api/invoices/:id/export', async (req, res) => {
         const { id } = req.params;
         const XLSX = require('xlsx');
         
-        // Get invoice details
+       /* // Get invoice details
         const [invoiceRows] = await pool.execute(`
             SELECT i.*, c.name as client_name, c.line1, c.line2, c.line3, c.line4
             FROM invoices i
             LEFT JOIN clients c ON i.client_id = c.id
             WHERE i.id = ?
-        `, [id]);
-        
-        if (invoiceRows.length === 0) {
+        `, [id]);*/
+
+        await client.connect();
+        const db = client.db('bissi_app');
+        const invoiceData = await db.collection('invoices').find({ _id: new ObjectId(id) }).toArray();
+        if(invoiceData.length === 0){
             return res.status(404).json({ success: false, message: 'Invoice not found' });
         }
         
-        const invoice = invoiceRows[0];
+        
+        const invoice = invoiceData[0];
         
         // Get invoice items
-        const [itemRows] = await pool.execute(`
+      /*  const [itemRows] = await pool.execute(`
             SELECT designation, quantity, unit, unit_price as unitPrice, total
             FROM invoice_items
             WHERE invoice_id = ?
             ORDER BY id
-        `, [id]);
+        `, [id]);*/
+
+        const itemsRows = await db.collection('invoice_items').find({ invoice_id: new ObjectId(id) }).sort({ sn: 1 }).toArray();
         
         // Create Excel workbook
         const workbook = XLSX.utils.book_new();
@@ -1291,7 +1666,7 @@ app.get('/api/invoices/:id/export', async (req, res) => {
             ['S/N', 'Item Designation', 'Quantity', 'Unit', 'Unit Price', 'Total']
         ];
         
-        itemRows.forEach((item, index) => {
+        itemsRows.forEach((item, index) => {
             allData.push([
                 index + 1,
                 item.designation,
@@ -1333,8 +1708,8 @@ app.get('/api/test', async (req, res) => {
 // ==================== START SERVER ====================
 
 async function startServer() {
-    //await initDatabase();
-    
+    await initializetMongoDatabase();
+  
     app.listen(PORT, () => {
         console.log(`========================================`);
         console.log(`  BISSI APP Server Running`);
