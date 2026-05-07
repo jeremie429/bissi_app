@@ -8,6 +8,8 @@ const { CanvasFactory } = require( "pdf-parse/worker");
 const { PDFParse } = require('pdf-parse');
 // or equivalent for your PDF library
 
+
+
 const Tesseract = require('tesseract.js');
 const fs = require('fs');
 const { log } = require('console');
@@ -15,6 +17,7 @@ const path = require('path');
 const { createWorker } = require ('tesseract.js');
 
 const {MongoClient} = require('mongodb');
+const {ObjectId} = require('mongodb');
 require('dotenv').config();
 
 const uri = process.env.MONGODB_URI;
@@ -310,9 +313,7 @@ async function initializetMongoDatabase() {
         console.log('✓ MongoDB database and collections initialized');
     } catch (error) {
         console.error('✗ MongoDB initialization error:', error.message);
-    } finally {
-        await client.close();
-    }
+    } 
 }
 
 // ==================== AUTH ROUTES ====================
@@ -359,8 +360,6 @@ app.post('/api/login', async (req, res) => {
            } catch (error) {
             console.error('MongoDB login error:', error);
             res.status(500).json({ success: false, message: 'Mongo Db error' });
-           }finally{
-            await client.close();
            }
            
            
@@ -430,8 +429,6 @@ app.post('/api/register', async (req, res) => {
         }catch(error){
             console.error('MongoDB register error:', error);
             res.status(500).json({ success: false, message: 'Mongo Db error' });
-        }finally{
-            await client.close();
         }
         // Check if email exists
       /*  const [existing] = await pool.execute('SELECT id FROM users WHERE email = ?', [email]);
@@ -477,8 +474,6 @@ app.get('/api/items', async (req, res) => {
         } catch (error) {
             console.error('Get items error:', error);
             res.status(500).json({ success: false, message: 'MongoDB error' });
-        }finally{
-            await client.close();
         }
         
     } catch (error) {
@@ -500,8 +495,6 @@ app.get('/api/flags', async (req, res) => {
     } catch (error) {
         console.error('Get flags error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
-    }finally{
-        await client.close();
     }
 });
 
@@ -569,6 +562,7 @@ app.post('/api/items', async (req, res) => {
             currency: currency || 'EUR',
             flag: flag || 'general'
         });
+        
         
         res.json({ success: true, message: 'Item added successfully' });
         
@@ -894,10 +888,10 @@ app.get('/api/clients/search', async (req, res) => {
         }
 
         const searchValue = `%${query}%`;
-        const [clients] = await pool.execute(
+        /*const [clients] = await pool.execute(
             'SELECT * FROM clients WHERE name LIKE ? OR line1 LIKE ? OR line2 LIKE ? OR line3 LIKE ? OR line4 LIKE ? ORDER BY updated_at DESC LIMIT 10',
             [searchValue, searchValue, searchValue, searchValue, searchValue]
-        );
+        );*/
         await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('clients');
@@ -908,8 +902,11 @@ app.get('/api/clients/search', async (req, res) => {
                 { line2: { $regex: searchValue, $options: 'i' } },
                 { line3: { $regex: searchValue, $options: 'i' } },
                 { line4: { $regex: searchValue, $options: 'i' } }
+
             ]
         }).toArray();
+
+        console.log('Client search for query:', query, 'found:', mongoClients.length);
 
         res.json({ success: true, clients: mongoClients });
     } catch (error) {
@@ -925,11 +922,11 @@ app.get('/api/invoices/next-number', async (req, res) => {
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const year = now.getFullYear();
         const searchPattern = `%/${month}/${year}`;
-
+/*
         const [rows] = await pool.execute(
             'SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1',
             [searchPattern]
-        );
+        );*/
 
         await client.connect();
         const db = client.db('bissi_app');
@@ -991,10 +988,14 @@ app.get('/api/invoices', async (req, res) => {
 app.get('/api/invoices/:id', async (req, res) => {
     try {
         const invoiceId = req.params.id;
-        const [invoices] = await pool.execute(
+        /*const [invoices] = await pool.execute(
             'SELECT * FROM invoices WHERE id = ?',
+
+
             [invoiceId]
-        );
+        );*/
+
+        console.log('Fetching items for invoice ID:', invoiceId);
         await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('invoices');
@@ -1012,8 +1013,12 @@ app.get('/api/invoices/:id', async (req, res) => {
             [invoiceId]
         );*/
 
+        
         const items = await db.collection('invoice_items').find({ invoice_id: new ObjectId(invoiceId) }).sort({ sn: 1 }).toArray();
-        res.json({ success: true, invoice: mongoInvoice[0], items });
+        const invoice = mongoInvoice[0];
+        invoice.id = invoice._id.toString();
+        console.log({invoice, items});
+        res.json({ success: true, invoice: invoice, items });
     } catch (error) {
         console.error('Invoice detail error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
