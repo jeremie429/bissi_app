@@ -251,6 +251,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
         if (tabId === 'invoice-history') {
             renderInvoiceHistory();
         }
+        toggleSidebar(); // Close sidebar on mobile after selecting a tab
     });
 });
 
