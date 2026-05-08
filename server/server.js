@@ -505,7 +505,10 @@ app.get('/api/items/search', async (req, res) => {
         const db = client.db('bissi_app');
         const collection = db.collection('items');
         const { q } = req.query;
+
+       // console.log('Search query:', q);
         if (!q || q.length < 2) {
+
             return res.json({ success: true, items: [] });
         }
         /*
@@ -526,12 +529,14 @@ app.get('/api/items/search', async (req, res) => {
         const exactMatch = `${q}%`;
         const items = await collection.find({
             $or: [
-                { code: { $regex: searchTerm, $options: 'i' } },
-                { name: { $regex: searchTerm, $options: 'i' } },
-                { category: { $regex: searchTerm, $options: 'i' } }
+                
+                { name: { $regex: q, $options: 'i' } },
+                { code: { $regex: q, $options: 'i' } },
+                { category: { $regex: q, $options: 'i' } }
             ]        }).sort({ created_at: -1 }).limit(20).toArray();
+       /* */
         //const [items] = await pool.execute(sql, [searchTerm, searchTerm, searchTerm, exactMatch, exactMatch]);
-        
+        //console.log('Search results:', items);
         res.json({ success: true, items });
     } catch (error) {
         console.error('Search items error:', error);
@@ -976,7 +981,7 @@ app.get('/api/invoices', async (req, res) => {
                 { invoice_number: { $regex: `%${query}%`, $options: 'i' } },
                 { client_name: { $regex: `%${query}%`, $options: 'i' } }
             ]
-        } : {}).sort({ _id: -1 }).limit(200).lean().toArray();
+        } : {}).sort({ _id: -1 }).limit(200).toArray();
         res.json({ success: true, invoices: mongoInvoices });
     } catch (error) {
         console.error('Invoice list error:', error);
@@ -995,7 +1000,7 @@ app.get('/api/invoices/:id', async (req, res) => {
             [invoiceId]
         );*/
 
-        console.log('Fetching items for invoice ID:', invoiceId);
+       // console.log('Fetching items for invoice ID:', invoiceId);
         await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('invoices');
@@ -1017,8 +1022,8 @@ app.get('/api/invoices/:id', async (req, res) => {
         const items = await db.collection('invoice_items').find({ invoice_id: new ObjectId(invoiceId) }).sort({ sn: 1 }).toArray();
         const invoice = mongoInvoice[0];
         invoice.id = invoice._id.toString();
-        console.log({invoice, items});
-        res.json({ success: true, invoice: invoice, items });
+        //console.log({invoice, items});
+        res.json({ success: true, invoice, items });
     } catch (error) {
         console.error('Invoice detail error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
