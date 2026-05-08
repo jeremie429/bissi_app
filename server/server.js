@@ -893,10 +893,7 @@ app.get('/api/clients/search', async (req, res) => {
         }
 
         const searchValue = `%${query}%`;
-        /*const [clients] = await pool.execute(
-            'SELECT * FROM clients WHERE name LIKE ? OR line1 LIKE ? OR line2 LIKE ? OR line3 LIKE ? OR line4 LIKE ? ORDER BY updated_at DESC LIMIT 10',
-            [searchValue, searchValue, searchValue, searchValue, searchValue]
-        );*/
+        
         await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('clients');
