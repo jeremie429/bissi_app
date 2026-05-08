@@ -1361,6 +1361,11 @@ async function renderInvoiceHistory() {
         return;
     }
 
+   
+    result.invoices.map((invoice, index) => {
+        invoice.invoiceId = invoice._id.toString();
+    });
+   
     emptyState.style.display = 'none';
     tbody.innerHTML = result.invoices.map(invoice => `
         <tr>
@@ -1371,13 +1376,13 @@ async function renderInvoiceHistory() {
             <td>${parseFloat(invoice.discount_percent).toFixed(2)}%</td>
             <td>${parseFloat(invoice.total).toFixed(2)}</td>
             <td>
-                <button class="action-btn action-btn-primary" onclick="viewInvoiceDetails(${invoice.id})" title="View Details">
+                <button class="action-btn action-btn-primary" onclick="viewInvoiceDetails('${invoice.invoiceId}')" title="View Details">
                     <i class="fas fa-eye"></i>
                 </button>
-                <button class="action-btn action-btn-secondary" onclick="exportInvoiceToExcel(${invoice.id})" title="Export to Excel">
+                <button class="action-btn action-btn-secondary" onclick="exportInvoiceToExcel('${invoice.invoiceId}')" title="Export to Excel">
                     <i class="fas fa-file-excel"></i>
                 </button>
-                <button class="action-btn action-btn-success" onclick="exportInvoiceToPDF(${invoice.id})" title="Export to PDF">
+                <button class="action-btn action-btn-success" onclick="exportInvoiceToPDF('${invoice.invoiceId}')" title="Export to PDF">
                     <i class="fas fa-file-pdf"></i>
                 </button>
             </td>
@@ -1510,6 +1515,8 @@ async function exportInvoiceToExcel(invoiceId) {
 }
 
 async function exportInvoiceToPDF(invoiceId) {
+
+
     try {
         const result = await apiRequest(`/invoices/${invoiceId}`);
         if (!result.success) {

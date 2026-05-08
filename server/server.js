@@ -937,7 +937,7 @@ app.get('/api/invoices/next-number', async (req, res) => {
         let nextIndex = 1;
         if(mongoInvoice.length > 0){
             const lastNumber = mongoInvoice[0].invoice_number.split('/')[0];
-            nextIndex = parseInt(lastNumber, 10) + 1;
+            nextIndex = parseInt(lastNumber,10) + 1;
         }
         /*if (rows.length > 0) {
             const lastNumber = rows[0].invoice_number.split('/')[0];
@@ -976,7 +976,7 @@ app.get('/api/invoices', async (req, res) => {
                 { invoice_number: { $regex: `%${query}%`, $options: 'i' } },
                 { client_name: { $regex: `%${query}%`, $options: 'i' } }
             ]
-        } : {}).sort({ _id: -1 }).limit(200).toArray();
+        } : {}).sort({ _id: -1 }).limit(200).lean().toArray();
         res.json({ success: true, invoices: mongoInvoices });
     } catch (error) {
         console.error('Invoice list error:', error);
