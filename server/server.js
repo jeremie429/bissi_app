@@ -908,7 +908,7 @@ app.get('/api/clients/search', async (req, res) => {
             ]
         }).toArray();
 
-        console.log('Client search for query:', query, 'found:', mongoClients.length);
+        //console.log('Client search for query:', query, 'found:', mongoClients.length);
 
         res.json({ success: true, clients: mongoClients });
     } catch (error) {
