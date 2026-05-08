@@ -902,11 +902,11 @@ app.get('/api/clients/search', async (req, res) => {
         const collection = db.collection('clients');
         const mongoClients = await collection.find({
             $or: [
-                { name: { $regex: searchValue, $options: 'i' } },
-                { line1: { $regex: searchValue, $options: 'i' } },
-                { line2: { $regex: searchValue, $options: 'i' } },
-                { line3: { $regex: searchValue, $options: 'i' } },
-                { line4: { $regex: searchValue, $options: 'i' } }
+                { name: { $regex: query, $options: 'i' } },
+                { line1: { $regex: query, $options: 'i' } },
+                { line2: { $regex: query, $options: 'i' } },
+                { line3: { $regex: query, $options: 'i' } },
+                { line4: { $regex: query, $options: 'i' } }
 
             ]
         }).toArray();
@@ -926,7 +926,7 @@ app.get('/api/invoices/next-number', async (req, res) => {
         const now = new Date();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const year = now.getFullYear();
-        const searchPattern = `%/${month}/${year}`;
+        const searchPattern = `/${month}/${year}`;
 /*
         const [rows] = await pool.execute(
             'SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1',
