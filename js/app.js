@@ -2,10 +2,10 @@
 
 
 // API Base URL
-//const API_URL = 'http://localhost:3000/api';
+const API_URL = 'http://localhost:3000/api';
 
 
-const API_URL = 'https://bissi-app-server.vercel.app/api';
+//const API_URL = 'https://bissi-app-server.vercel.app/api';
 
 // Global variables
 let currentUser = null;
@@ -727,10 +727,10 @@ function renderQuotePreview() {
     const tbody = document.getElementById('quoteTableBody');
     tbody.innerHTML = currentQuote.map((item, index) => `
         <tr>
-            <td>${item.name}</td>
-            <td>${item.quantity}</td>
-            <td>${item.unit}</td>
-            <td class="price-cell">${item.price}${item.currency}</td>
+            <td><input type="text" class="invoice-name"  value="${item.name}" oninput="updateQuoteRow(this, ${index})"></td>
+            <td><input type="number" class="invoice-quantity"  value="${item.quantity}" oninput="updateQuoteRow(this, ${index})"></td>
+            <td><input type="text" class="invoice-unit" value="${item.unit}" oninput="updateQuoteRow(this, ${index})"></td>
+            <td><input type="number" class="invoice-price" min="0" step="0.01" value="${item.price}" oninput="updateQuoteRow(this, ${index})"></td>
             <td>${item.currency}</td>
             <td><strong>${item.total.toFixed(2)} ${item.currency}</strong></td>
             <td>
@@ -739,9 +739,13 @@ function renderQuotePreview() {
                     ${item.found ? 'Found' : 'Not Found'}
                 </span>
             </td>
-            <td>
+            <td class="actions-cell">
                 <button class="action-btn action-btn-delete" onclick="deleteQuoteRow(${index})" title="Delete row">
                     <i class="fas fa-trash"></i>
+                </button>
+                
+                <button class="action-btn action-btn-add" onclick="addQuoteRow(${index})" title="Add row before">
+                    <i class="fas fa-plus"></i>
                 </button>
             </td>
         </tr>
@@ -749,6 +753,49 @@ function renderQuotePreview() {
 
     const grandTotal = currentQuote.reduce((sum, item) => sum + item.total, 0);
     document.getElementById('quoteGrandTotal').textContent = grandTotal.toFixed(2) + (currentQuote.length > 0 ? ' ' + currentQuote[0].currency : '');
+}
+
+function updateQuoteRow(input, index) {
+
+    setTimeout(() => {
+       const row = input.closest('tr');
+    const name = row.querySelector('.invoice-name').value;
+    const quantity = row.querySelector('.invoice-quantity').value;
+    const unit = row.querySelector('.invoice-unit').value;
+    const price = row.querySelector('.invoice-price').value;
+        ///const currency = row.querySelector('.invoice-currency').value;
+
+    // Update the corresponding item in the quote array
+    currentQuote[index].name = name;
+    currentQuote[index].quantity = parseFloat(quantity) || 0;
+    currentQuote[index].unit = unit;
+    currentQuote[index].price = price || 0;
+    ///currentQuote[index].currency = currency;
+
+    // Recalculate the total for this item
+    currentQuote[index].total = currentQuote[index].price * currentQuote[index].quantity;
+
+    // Re-render the quote preview
+    renderQuotePreview(); 
+    }, 3000);
+    
+}
+
+function addQuoteRow(index) {
+    const newItem = {
+        id: null,
+        code: '',
+        name: '',
+        category: '-',
+        unit: '',
+        price: 0,
+        currency: currentQuote.length > 0 ? currentQuote[0].currency : 'EUR',
+        quantity: 1,
+        total: 0,
+        found: false
+    };
+    currentQuote.splice(index, 0, newItem);
+    renderQuotePreview();
 }
 
 /**
@@ -863,7 +910,8 @@ async function searchClients(query) {
 
             const matchedClient = result.clients.find(client => client.name.toLowerCase() === query.toLowerCase());
             if (matchedClient) {
-                document.getElementById('clientId').value = matchedClient.id;
+               // console.log('Matched client ID:', matchedClient._id.toString());
+                document.getElementById('clientId').value = matchedClient._id.toString();
                 document.getElementById('clientLine1').value = matchedClient.line1 || '';
                 document.getElementById('clientLine2').value = matchedClient.line2 || '';
                 document.getElementById('clientLine3').value = matchedClient.line3 || '';
@@ -1022,13 +1070,13 @@ async function saveClient() {
     }
 }
 
-function addInvoiceRow(e, item={}) {
+function addInvoiceRow( item = {}, e = null, position = 'before') {
   
-    
+    console.log('Adding invoice row', { item});
     //console.log('Adding invoice row', {event: e?.parentElement, item});
     const tbody = document.getElementById('invoiceTableBody');
     const rowIndex =  tbody.children.length + 1;
-    
+    //console.log
     const designation = item.designation || '';
     const quantity = item.quantity || 1;
     const unit = item.unit || '';
@@ -1245,6 +1293,7 @@ async function importInvoiceFromExcel(event) {
                 // Clear existing rows
                 document.getElementById('invoiceTableBody').innerHTML = '';
                 
+               // console.log('Imported items:', result.items);
                 // Add imported items
                 result.items.forEach(item => {
                     addInvoiceRow(item);
