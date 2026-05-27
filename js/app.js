@@ -732,7 +732,7 @@ function renderQuotePreview() {
             <td><input type="text" class="invoice-unit" value="${item.unit}" oninput="updateQuoteRow(this, ${index})"></td>
             <td><input type="number" class="invoice-price" min="0" step="0.01" value="${item.price}" oninput="updateQuoteRow(this, ${index})"></td>
             <td>${item.currency}</td>
-            <td><strong>${item.total.toFixed(2)} ${item.currency}</strong></td>
+            <td><strong>${item.total.toFixed(2)} </strong></td>
             <td>
                 <span class="match-status ${item.found ? 'match-found' : 'match-not-found'}">
                     <i class="fas fa-${item.found ? 'check' : 'times'}"></i>

@@ -789,12 +789,16 @@ h1, h2, h3, h4 {
  .invoice-row input,
  #quoteTableBody input{
     width: 100%;
-    padding: 10px 16px;
+    min-width: 100px;
+    padding: 10px 8px;
     background: var(--primary);
     border: none;
     border-radius: 8px;
     color: var(--text-primary);
  }
+ 
+ 
+
 
 /* ==================== Quotation Preview ==================== */
 .quote-preview {
