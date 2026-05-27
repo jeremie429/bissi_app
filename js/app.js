@@ -1758,9 +1758,7 @@ doc.setTextColor(0, 0, 0);
 
         //generate qr code with invoice info (invoice number, date, client name, total, items formatted with special character ready to copy paste to excel sheet in each column and row) and add to pdf
             const qrData = `Invoice Number:\t${invoice.invoice_number}\nDate:\t${new Date(invoice.invoice_date).toLocaleDateString('en-GB')}\nClient:\t${invoice.client_name}\nTotal:\t${parseFloat(invoice.total).toFixed(2)} ${invoice.invoice_currency}\n\nItems:\n${items.map(item => `${item.sn}; ${item.designation}; ${item.quantity}; ${item.unit}; ${parseFloat(item.unit_price).toFixed(2)}; ${parseFloat(item.total).toFixed(2)}`).join('\n')}`;
-       // const qrData = `Invoice Number: ${invoice.invoice_number}\nDate: ${new Date(invoice.invoice_date).toLocaleDateString('en-GB')}\nClient: ${invoice.client_name}\nTotal: ${parseFloat(invoice.total).toFixed(2)} ${invoice.invoice_currency}\n\nItems:\n${items.map(item => `${item.sn}, ${item.designation} , ${item.quantity} ${item.unit} , ${parseFloat(item.unit_price).toFixed(2)} , ${parseFloat(item.total).toFixed(2)}`).join('\n')}`;
-        //const qrData = `Invoice Number: ${invoice.invoice_number}\nDate: ${new Date(invoice.invoice_date).toLocaleDateString('en-GB')}\nClient: ${invoice.client_name}\nTotal: ${parseFloat(invoice.total).toFixed(2)} ${invoice.invoice_currency}\n\nItems:\n${items.map(item => `${item.sn}. ${item.designation} - Qty: ${item.quantity} ${item.unit} - Unit Price: ${parseFloat(item.unit_price).toFixed(2)} - Total: ${parseFloat(item.total).toFixed(2)}`).join('\n')}`;
-        const qrCodeCanvas = document.createElement('canvas');
+      
         QRCode.toCanvas(qrCodeCanvas, qrData, { width: 100 }, function (error) {
             if (error) {
                 console.error('QR code generation error:', error);
