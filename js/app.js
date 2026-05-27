@@ -195,7 +195,7 @@ async function updateDashboardStats() {
         document.getElementById('totalItems').textContent = result.stats.totalItems;
         document.getElementById('totalQuotes').textContent = result.stats.totalQuotes;
         document.getElementById('totalUsers').textContent = result.stats.totalUsers;
-        document.getElementById('totalValue').textContent = '$' + parseFloat(result.stats.totalValue).toFixed(2);
+       // document.getElementById('totalValue').textContent =  + parseFloat(result.stats.totalValue).toFixed(2);
     }
 }
 
@@ -732,7 +732,7 @@ function renderQuotePreview() {
             <td><input type="text" class="invoice-unit" value="${item.unit}" oninput="updateQuoteRow(this, ${index})"></td>
             <td><input type="number" class="invoice-price" min="0" step="0.01" value="${item.price}" oninput="updateQuoteRow(this, ${index})"></td>
             <td>${item.currency}</td>
-            <td><strong>${item.total.toFixed(2)} </strong></td>
+            <td><strong class = "item-total">${item.total.toFixed(2)} </strong></td>
             <td>
                 <span class="match-status ${item.found ? 'match-found' : 'match-not-found'}">
                     <i class="fas fa-${item.found ? 'check' : 'times'}"></i>
@@ -746,6 +746,10 @@ function renderQuotePreview() {
                 
                 <button class="action-btn action-btn-add" onclick="addQuoteRow(${index})" title="Add row before">
                     <i class="fas fa-plus"></i>
+                </button>
+               
+                <button class="action-btn action-btn-secondary" onclick="insertItemIntoDatabase(${index})" title="Insert item into database" style="display: ${item.found ? 'none' : 'inline-block'};">
+                    <i class="fas fa-save"></i>
                 </button>
             </td>
         </tr>
@@ -769,14 +773,17 @@ function updateQuoteRow(input, index) {
     currentQuote[index].name = name;
     currentQuote[index].quantity = parseFloat(quantity) || 0;
     currentQuote[index].unit = unit;
-    currentQuote[index].price = price || 0;
+    currentQuote[index].price = parseFloat(price) || 0;
     ///currentQuote[index].currency = currency;
 
     // Recalculate the total for this item
     currentQuote[index].total = currentQuote[index].price * currentQuote[index].quantity;
 
+    row.querySelector('.item-total').textContent = currentQuote[index].total.toFixed(2) || '';
+     const grandTotal = currentQuote.reduce((sum, item) => sum + item.total, 0);
+    document.getElementById('quoteGrandTotal').textContent = grandTotal.toFixed(2) + (currentQuote.length > 0 ? ' ' + currentQuote[0].currency : '');
     // Re-render the quote preview
-    renderQuotePreview(); 
+    //renderQuotePreview(); 
     }, 3000);
     
 }
@@ -796,6 +803,29 @@ function addQuoteRow(index) {
     };
     currentQuote.splice(index, 0, newItem);
     renderQuotePreview();
+}
+ async function insertItemIntoDatabase(index) {
+    const item = currentQuote[index];
+    if (!item) return;
+
+    // Implementation for inserting item into database
+   const result = await apiRequest('/items', 'POST', {
+        code: item.code || `ITEM-${Date.now()}`,
+        name: item.name,
+        category: item.category || 'general',
+        unit: item.unit,
+        price: item.price,
+        currency: item.currency
+    });
+
+    if (result.success) {
+        showNotification(`Item "${item.name}" inserted into database!`, 'success');
+        currentQuote[index].found = true;
+        //currentQuote[index].id = result.item._id;
+        renderQuotePreview();
+    } else {
+        showNotification(`Failed to insert item: ${result.message}`, 'error');
+    }
 }
 
 /**
@@ -1072,7 +1102,7 @@ async function saveClient() {
 
 function addInvoiceRow( item = {}, e = null, position = 'before') {
   
-    console.log('Adding invoice row', { item});
+    //console.log('Adding invoice row', { item});
     //console.log('Adding invoice row', {event: e?.parentElement, item});
     const tbody = document.getElementById('invoiceTableBody');
     const rowIndex =  tbody.children.length + 1;
