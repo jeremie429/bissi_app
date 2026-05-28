@@ -1958,7 +1958,7 @@ function filterItems() {
 }
 
 async function deleteItem(itemId) {
-    if (!confirm('Are you sure you want to delete this item?')) return;
+    if (!confirm(`Are you sure you want to delete item ${allItems.find(i => i._id.toString() === itemId)?.name }?`)) return;
 
     const result = await apiRequest(`/items/${itemId}`, 'DELETE');
     if (result.success) {   
