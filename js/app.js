@@ -66,7 +66,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     const password = document.getElementById('loginPassword').value;
     
     const result = await apiRequest('/login', 'POST', { email, password });
-    console.log('Login result:', result);
+    //console.log('Login result:', result);
     if (result.success) {
         currentUser = result.user;
         localStorage.setItem('sc_currentUser', JSON.stringify(currentUser));
@@ -172,6 +172,24 @@ async function showDashboard() {
     await renderRecentItems();
     await renderItemsTable();
     await initInvoiceForm();
+    await initFlagsByDb()
+}
+
+function initFlagsByDb() {
+    apiRequest('/flags').then(result => {
+        if (result.success) {
+            const flagSelect = document.getElementById('quotationFlag');
+           
+            flagSelect.innerHTML = '<option value="">All Flags</option>';
+            result.flags.forEach(flag => {
+                const option = document.createElement('option');
+                option.value = flag;
+                option.textContent = flag;
+                flagSelect.appendChild(option);
+             
+            });
+        }
+    });
 }
 
 /**
@@ -274,6 +292,7 @@ document.getElementById('insertItemForm').addEventListener('submit', async funct
         showAlert('itemAlert', 'Only admins can insert items', 'error');
         return;
     }
+    const existingFlag = document.getElementById('itemFlag').value
 
     const newItem = {
         code: document.getElementById('itemCode').value,
@@ -283,7 +302,7 @@ document.getElementById('insertItemForm').addEventListener('submit', async funct
         price: parseFloat(document.getElementById('itemPrice').value),
         description: document.getElementById('itemDescription').value,
         currency: document.getElementById('itemCurrency').value,
-        flag: document.getElementById('itemFlag').value
+        flag:  existingFlag != '' ? existingFlag : 'general'
     };
 
     const result = await apiRequest('/items', 'POST', newItem);
@@ -294,6 +313,7 @@ document.getElementById('insertItemForm').addEventListener('submit', async funct
         await updateDashboardStats();
         await renderRecentItems();
         await renderItemsTable();
+        await initFlagsByDb()
     } else {
         showAlert('itemAlert', result.message, 'error');
     }
@@ -566,11 +586,14 @@ async function fetchQuotation() {
         let foundCount = 0;
         let notFound = [];
 
+       
         // Match items by name and unit
         currentQuote = currentQuote.map(item => {
+            item.price = 0; // Reset price to 0 for re-matching
             const matched = dbItems.find(db => 
                 db.name.toLowerCase() === item.name.toLowerCase() && 
-                db.unit.toLowerCase() === item.unit.toLowerCase()
+                db.unit.toLowerCase() === item.unit.toLowerCase() &&
+                (quotationFlag === '' || db.flag === quotationFlag)
             );
             
             if (matched) {
@@ -823,6 +846,7 @@ function addQuoteRow(index) {
         currentQuote[index].found = true;
         //currentQuote[index].id = result.item._id;
         renderQuotePreview();
+        await initFlagsByDb()
     } else {
         showNotification(`Failed to insert item: ${result.message}`, 'error');
     }
@@ -1837,8 +1861,10 @@ let allItems = [];
  * Render items table with pagination and filters
  */
 async function renderItemsTable() {
-    const result = await apiRequest('/items');
     const tbody = document.getElementById('itemsTableBody');
+    if (!allItems.length) {
+    const result = await apiRequest('/items');
+    
     
     if (!result.success) {
         tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Error loading items</td></tr>';
@@ -1846,6 +1872,7 @@ async function renderItemsTable() {
     }
     
     allItems = result.items;
+    }
     
     let filteredItems = allItems;
     const searchTerm = document.getElementById('searchItems').value.toLowerCase();
@@ -1879,8 +1906,12 @@ async function renderItemsTable() {
                 <td><span class="badge badge-flag">${item.flag || 'general'}</span></td>
                 <td class="action-btns">
                     ${currentUser.role === 'admin' ? `
-                        <button class="action-btn action-btn-edit" onclick="openEditPrice('${item.id}')" title="Edit Price">
+                        <button class="action-btn action-btn-edit" onclick="openEditPrice('${item._id.toString()}')" title="Edit Price">
                             <i class="fas fa-edit"></i>
+                        </button>
+                        
+                        <button class="action-btn action-btn-delete" onclick="deleteItem('${item._id.toString()}')" title="Delete Item">
+                            <i class="fas fa-trash"></i>
                         </button>
                     ` : ''}
                 </td>
@@ -1926,18 +1957,32 @@ function filterItems() {
     renderItemsTable();
 }
 
+async function deleteItem(itemId) {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+
+    const result = await apiRequest(`/items/${itemId}`, 'DELETE');
+    if (result.success) {   
+        showNotification(result.message, 'success');
+        allItems = allItems.filter(item => item._id.toString() !== itemId);
+        renderItemsTable();
+        updateDashboardStats();
+        renderRecentItems();
+    } else {
+        showAlert(result.message, 'error');
+    }
+}
 /**
  * Open edit price modal
  * @param {string} itemId - The ID of the item to edit
  */
 function openEditPrice(itemId) {
-    const item = allItems.find(i => i.id == itemId);
+    const item = allItems.find(i => i._id.toString() == itemId);
     if (!item) return;
 
-    document.getElementById('editItemId').value = item.id;
+    document.getElementById('editItemId').value = item._id.toString();
     document.getElementById('editItemCode').value = item.code;
     document.getElementById('editItemName').value = item.name;
-    document.getElementById('editCurrentPrice').value = '$' + parseFloat(item.price).toFixed(2);
+    document.getElementById('editCurrentPrice').value =  parseFloat(item.price).toFixed(2);
     document.getElementById('editCurrentCurrency').value = item.currency || 'EUR';
     document.getElementById('editNewPrice').value = item.price;
 
@@ -1960,6 +2005,8 @@ document.getElementById('editPriceForm').addEventListener('submit', async functi
 
     if (result.success) {
         showAlert('priceAlert', result.message, 'success');
+        allItems = allItems.map(item => item._id.toString() === itemId ? { ...item, price: newPrice, currency: newCurrency, name: itemName, code: itemCode } : item);
+       showNotification(`Item ${itemName} updated to ${newCurrency} ${newPrice.toFixed(2)}`, 'success');
         setTimeout(() => {
             closeModal('editPriceModal');
             renderItemsTable();
@@ -1967,7 +2014,7 @@ document.getElementById('editPriceForm').addEventListener('submit', async functi
             renderRecentItems();
         }, 1500);
     } else {
-        showAlert('priceAlert', result.message, 'error');
+        showAlert(result.message, 'error');
     }
 });
 
@@ -1995,16 +2042,16 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
  */
 function downloadItemsTemplate() {
     const templateData = [
-        ['IMPA Code', 'Name', 'Category', 'Unit', 'Price', 'Currency'],
-        ['11.01.01', 'Admiralty Anchor 10kg', 'Anchors & Mooring', 'PCS', '150.00', 'EUR'],
-        ['17.02.05', 'Polypropylene Rope 10mm', 'Ropes & Lines', 'MTR', '2.50', 'EUR'],
-        ['21.05.01', 'Dock Fender 500mm', 'Fenders', 'PCS', '85.00', 'EUR']
+        ['IMPA Code', 'Name', 'Category', 'Unit', 'Price', 'Currency', 'Flag', 'Description'],
+        ['11.01.01', 'Admiralty Anchor 10kg', 'Anchors & Mooring', 'PCS', '150.00', 'EUR', 'general', ''],
+        ['17.02.05', 'Polypropylene Rope 10mm', 'Ropes & Lines', 'MTR', '2.50', 'EUR', 'general', ''],
+        ['21.05.01', 'Dock Fender 500mm', 'Fenders', 'PCS', '85.00', 'EUR', 'general', '']
     ];
     
     const ws = XLSX.utils.aoa_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Items');
-    XLSX.writeFile(wb, 'Items_Template.xlsx');
+    XLSX.writeFile(wb, 'Insert_Items_Template.xlsx');
 }
 
 /**
@@ -2033,7 +2080,9 @@ async function handleBulkItemsUpload(event) {
             const category = row['Category'] || row['category'];
             const currency = row['Currency'] || row['currency'] || 'EUR';
             const unit = row['Unit'] || row['unit'];
-            const price = parseFloat(row['Price'] || row['price']);
+            const price = parseFloat(row['Price'] || row['price'])
+            const flag = row['Flag'] || row['flag'] || 'general'
+            ;
 
             // Validate IMPA code format (XX.XX.XX)
            /* const impaPattern = /^(\d{2})\.(\d{2})\.(\d{2})$/;
@@ -2065,6 +2114,7 @@ async function handleBulkItemsUpload(event) {
                 unit: unit.trim(),
                 price: price,
                 currency: currency?.trim(),
+                flag: flag?.trim(),
                 description: row['Description'] || row['description'] || ''
             });
         });
@@ -2097,6 +2147,7 @@ async function handleBulkItemsUpload(event) {
             await updateDashboardStats();
             await renderRecentItems();
             await renderItemsTable();
+            await initFlagsByDb();
             
             // Reset file input
             document.getElementById('bulkItemsFile').value = '';
