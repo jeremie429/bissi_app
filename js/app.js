@@ -1880,8 +1880,7 @@ async function renderItemsTable() {
 
     if (searchTerm) {
         filteredItems = filteredItems.filter(item => 
-            item.name.toLowerCase().includes(searchTerm) || 
-            item.code.toLowerCase().includes(searchTerm)
+            item.name.toLowerCase().includes(searchTerm) 
         );
     }
 
