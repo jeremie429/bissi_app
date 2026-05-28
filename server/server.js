@@ -738,6 +738,28 @@ app.put('/api/items/:id/price', async (req, res) => {
     }
 });
 
+//delete item in db
+app.delete('/api/items/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+
+        const result = await collection.deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ success: false, message: 'Item not found' });
+        }
+
+        res.json({ success: true, message: 'Item deleted successfully' });
+    } catch (error) {
+        console.error('Delete item error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // ==================== QUOTATION ROUTES ====================
 
 // Get all quotations
