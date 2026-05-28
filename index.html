@@ -290,7 +290,7 @@
                     <div>
                         <h3 style="margin-bottom: 16px; color: var(--accent);"><i class="fas fa-file-import"></i> Bulk Import from Excel</h3>
                         <p style="color: var(--text-secondary); margin-bottom: 16px;">
-                            Upload an Excel file with multiple items. Required columns: IMPA Code, Name, Category, Unit, Price
+                            Upload an Excel file with multiple items. Required columns:  Name, Category, Unit, Price, Currency
                         </p>
                         <div class="template-download" onclick="downloadItemsTemplate()" style="margin-bottom: 16px;">
                             <i class="fas fa-file-excel"></i>
@@ -302,7 +302,7 @@
                         <label class="file-upload" for="bulkItemsFile">
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Click to upload Excel file with multiple items</p>
-                            <p style="font-size: 0.85rem; margin-top: 8px;">Columns: IMPA Code, Name, Category, Unit, Price</p>
+                            <p style="font-size: 0.85rem; margin-top: 8px;">Columns: IMPA Code, Name, Category, Unit, Price, Currency, Flag, Description</p>
                         </label>
                         <input type="file" id="bulkItemsFile" accept=".xlsx, .xls" onchange="handleBulkItemsUpload(event)" style="display: none;">
                         <div id="bulkImportAlert" class="alert"></div>
@@ -354,7 +354,7 @@
                     <label class="file-upload" for="excelFile">
                         <i class="fas fa-cloud-upload-alt"></i>
                         <p>Click to upload Excel file (.xlsx, .xls)</p>
-                        <p style="font-size: 0.85rem; margin-top: 8px;">Columns: IMPA Code, Quantity</p>
+                        <p style="font-size: 0.85rem; margin-top: 8px;">Columns: Item Description, Item Unit, Quantity, Currency, Flag</p>
                     </label>
                     <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="handleExcelUpload(event)">
                 </div>
@@ -363,12 +363,12 @@
                 <div class="table-container">
                     <h3><i class="fas fa-file-pdf"></i> Import from PDF (Requirements List)</h3>
                     <p style="color: var(--text-secondary); margin-bottom: 16px;">
-                        Upload a PDF file containing your requirements. The system will extract item codes and quantities.
+                        Upload a PDF file containing your requirements. The system will extract item details.
                     </p>
                     <label class="file-upload" for="pdfFile">
                         <i class="fas fa-file-pdf"></i>
                         <p>Click to upload PDF file (.pdf)</p>
-                        <p style="font-size: 0.85rem; margin-top: 8px;">Extracts IMPA codes and quantities from PDF</p>
+                        <p style="font-size: 0.85rem; margin-top: 8px;">Extracts IMPA Code, Name, Category, Unit, Price, Currency, Flag, Description from PDF</p>
                     </label>
                     <input type="file" id="pdfFile" accept=".pdf" onchange="handlePDFUpload(event)" style="display: none;">
                     
@@ -514,6 +514,13 @@
                                 <i class="fas fa-sync-alt"></i> New Invoice
                             </button>
                         </div>
+                        <div class="template-download" onclick="downloadInvoiceTemplate()">
+                        <i class="fas fa-file-excel"></i>
+                        <div>
+                            <strong>Invoice Template.xlsx</strong>
+                            <p>Click to download Excel template for Invoice</p>
+                        </div>
+                    </div>
                         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                             <label class="btn btn-secondary" style="cursor: pointer; margin: 0;">
                                 <i class="fas fa-file-upload"></i> Import Excel
