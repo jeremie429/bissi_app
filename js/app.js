@@ -2045,7 +2045,7 @@ function openEditPrice(itemId) {
     document.getElementById('editNewPrice').value = item.price;
     document.getElementById('editItemFlag').value = item.flag || 'general';
     document.getElementById('editItemCategory').value = item.category || '';
-
+    document.getElementById('editItemUnit').value = item.unit || '';
     document.getElementById('editPriceModal').classList.add('active');
 }
 
@@ -2061,14 +2061,14 @@ document.getElementById('editPriceForm').addEventListener('submit', async functi
     const itemName = document.getElementById('editItemName').value;
     const newCurrency = document.getElementById('editNewCurrency').value;
     const itemFlag = document.getElementById('editItemFlag').value;
-    
+    const itemUnit = document.getElementById('editItemUnit').value;
     const itemCategory = document.getElementById('editItemCategory').value;
 
-    const result = await apiRequest(`/items/${itemId}/price`, 'PUT', { price: newPrice, name: itemName, code: itemCode, currency: newCurrency, flag:itemFlag, category:itemCategory });
+    const result = await apiRequest(`/items/${itemId}/price`, 'PUT', { price: newPrice, name: itemName, code: itemCode, currency: newCurrency, flag:itemFlag, unit: itemUnit, category:itemCategory });
 
     if (result.success) {
         showAlert('priceAlert', result.message, 'success');
-        allItems = allItems.map(item => item._id.toString() === itemId ? { ...item, price: newPrice, currency: newCurrency, name: itemName, code: itemCode, flag: itemFlag, category: itemCategory } : item);
+        allItems = allItems.map(item => item._id.toString() === itemId ? { ...item, price: newPrice, currency: newCurrency, name: itemName, code: itemCode, flag: itemFlag, unit: itemUnit, category: itemCategory } : item);
        showNotification(`Item ${itemName} updated to ${newCurrency} ${newPrice.toFixed(2)}`, 'success');
         setTimeout(() => {
             closeModal('editPriceModal');
