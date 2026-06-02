@@ -344,7 +344,7 @@ app.post('/api/login', async (req, res) => {
 
                     }
                     if (mongoUser.password !== password) {
-                        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+                        return res.status(401).json({ success: false, message: 'Invalid password' });
                     }
                     const user = {
                         id: mongoUser._id,
@@ -468,7 +468,9 @@ app.get('/api/items', async (req, res) => {
             await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('items');
-        const items = await collection.find(flag ? { flag: flag } : {}).sort({ created_at: -1 }).toArray();
+        // get items sorted by name field
+        const items = await collection.find(flag ? { flag: flag } : {}).sort({ name: 1 }).toArray();
+
         //const [items] = await pool.execute(sql, params);
         res.json({ success: true, items });
         } catch (error) {
@@ -495,6 +497,19 @@ app.get('/api/flags', async (req, res) => {
     } catch (error) {
         console.error('Get flags error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/categories', async (req, res) => {
+    try {
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('items');
+        const categories = await collection.distinct('category');
+        res.json({ success: true, categories: categories });
+    } catch (error) {
+        console.error('Get categories error:', error);
+        res.json({success: false, message: 'Server error'});
     }
 });
 
@@ -533,7 +548,7 @@ app.get('/api/items/search', async (req, res) => {
                 { name: { $regex: q, $options: 'i' } },
                 { code: { $regex: q, $options: 'i' } },
                 { category: { $regex: q, $options: 'i' } }
-            ]        }).sort({ created_at: -1 }).limit(20).toArray();
+            ]        }).sort({ name: 1 }).limit(20).toArray();
        /* */
         //const [items] = await pool.execute(sql, [searchTerm, searchTerm, searchTerm, exactMatch, exactMatch]);
         //console.log('Search results:', items);
@@ -552,9 +567,9 @@ app.post('/api/items', async (req, res) => {
         await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('items');
-        const existing = await collection.findOne({ name: name, currency: currency });
+        const existing = await collection.findOne({ name: name, currency: currency, flag: flag });
         if (existing) {
-            return res.status(400).json({ success: false, message: 'Item with same name and currency already exists' });
+            return res.status(400).json({ success: false, message: 'Item with same name, currency, and flag already exists' });
         }
         
         await collection.insertOne({
@@ -569,7 +584,7 @@ app.post('/api/items', async (req, res) => {
         });
         
         
-        res.json({ success: true, message: 'Item added successfully' });
+        res.json({ success: true, message: `Item ${name} added successfully in Database!` });
         
     } catch (error) {
         console.error('Add item error:', error);
@@ -596,7 +611,7 @@ app.post('/api/items/bulk', async (req, res) => {
         */
         for (const item of items) {
             const code = item.code || item['Item Code'] || item['IMPA Code'] || item['Code']|| '';
-            const name = item.name || item['Item Name'] || item['Name'] || item['Description'];
+            const name = item.name || item['Item Name'] || item['Name'] || item['Description'] || item['Designation'] ||item['Product Name'] || item['Item Description'];
             const category = item.category || item['Category'] || 'Other';
             const unit = item.unit || item['Unit'] || 'PCS';
             const price = parseFloat(item.price || item['Price'] || item['Unit Price'] || 0);
@@ -612,10 +627,10 @@ app.post('/api/items/bulk', async (req, res) => {
                 await client.connect();
         const db = client.db('bissi_app');
             const collection = db.collection('items');
-            const existing = await collection.findOne({ name: name, currency: currency });
+            const existing = await collection.findOne({ name: name, currency: currency, flag: flag });
 
             if(existing){
-                results.duplicates.push({ code, name, reason: 'Item already exists' });
+                results.duplicates.push({ code, name, flag, reason: 'Item already exists' });
                 continue;
             }
             // Check for duplicates
@@ -637,7 +652,7 @@ app.post('/api/items/bulk', async (req, res) => {
                 flag: flag || 'general'
             });
             
-            results.success.push({ code, name });
+            results.success.push({ code, name, flag });
         }
         
         res.json({ 
@@ -717,6 +732,9 @@ app.put('/api/items/:id/price', async (req, res) => {
         const { price } = req.body;
         const { name } = req.body;
         const { code } = req.body;
+        const {flag} = req.body;
+        const {currency} = req.body;
+        const {category} = req.body;    
 
           
         await client.connect();
@@ -726,7 +744,7 @@ app.put('/api/items/:id/price', async (req, res) => {
             if (!existing) {
                 return res.status(404).json({ success: false, message: 'Item not found' });
             }
-            await collection.updateOne({ _id: new ObjectId(id) }, { $set: { price: price, name: name, code: code } });
+            await collection.updateOne({ _id: new ObjectId(id) }, { $set: { price: price, name: name, code: code, flag: flag, currency:currency, category: category  } });
 /*
         await pool.execute('UPDATE items SET price = ?, name = ?, code = ? WHERE id = ?', [price, name, code, id]);*/
         

@@ -227,20 +227,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Category *</label>
-                                    <select id="itemCategory" required>
-                                        <option value="">Select Category</option>
-                                        <option value="Anchors & Mooring">Anchors & Mooring</option>
-                                        <option value="Ropes & Lines">Ropes & Lines</option>
-                                        <option value="Fenders">Fenders</option>
-                                        <option value="Safety Equipment">Safety Equipment</option>
-                                        <option value="Paint & Coatings">Paint & Coatings</option>
-                                        <option value="Electrical">Electrical</option>
-                                        <option value="Plumbing">Plumbing</option>
-                                        <option value="Hardware">Hardware</option>
-                                        <option value="Cleaning">Cleaning</option>
-                                        <option value="Provisions">Food</option>
-                                        <option value="Other">Other</option>
-                                    </select>
+                                    <input type="text" id="itemCategory" required placeholder="e.g., Anchoring Equipment">
                                 </div>
                                 <div class="form-group">
                                     <label>Unit *</label>
@@ -619,17 +606,8 @@
                             <input type="text" id="searchItems" placeholder="Search items..." onkeyup="filterItems()">
                             <select id="filterCategory" onchange="filterItems()" style="padding: 10px 16px; background: var(--primary); border: none; border-radius: 8px; color: var(--text-primary);">
                                 <option value="">All Categories</option>
-                                <option value="Anchors & Mooring">Anchors & Mooring</option>
-                                <option value="Ropes & Lines">Ropes & Lines</option>
-                                <option value="Fenders">Fenders</option>
-                                <option value="Safety Equipment">Safety Equipment</option>
-                                <option value="Paint & Coatings">Paint & Coatings</option>
-                                <option value="Electrical">Electrical</option>
-                                <option value="Plumbing">Plumbing</option>
-                                <option value="Hardware">Hardware</option>
-                                <option value="Cleaning">Cleaning</option>
-                                <option value="Cleaning">Provisions</option>
-                                <option value="Other">Other</option>
+                                
+                                
                             </select>
                         </div>
                     </div>
@@ -666,12 +644,21 @@
             <form id="editPriceForm">
                 <input type="hidden" id="editItemId">
                 <div class="form-group">
+                    <label>Item Flag</label>
+                    <input type="text" id="editItemFlag" >
+                </div>
+               
+                <div class="form-group">
                     <label>Item Code</label>
                     <input type="text" id="editItemCode" >
                 </div>
                 <div class="form-group">
                     <label>Item Name</label>
                     <input type="text" id="editItemName" >
+                </div>
+                <div class="form-group">
+                    <label>Item Category</label>
+                    <input type="text" id="editItemCategory" >
                 </div>
                 <div class="form-group">
                     <label>Current Price</label>

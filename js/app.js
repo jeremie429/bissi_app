@@ -237,7 +237,7 @@ async function renderRecentItems() {
             <td>${item.name}</td>
             <td><span class="category-tag">${item.category}</span></td>
             <td>${item.unit}</td>
-            <td class="price-cell">$${parseFloat(item.price).toFixed(2)}</td>
+            <td class="price-cell">${parseFloat(item.price).toFixed(2)} ${item.currency}</td>
         </tr>
     `).join('');
 }
@@ -1927,7 +1927,15 @@ async function renderItemsTable() {
     
     let filteredItems = allItems;
     const searchTerm = document.getElementById('searchItems').value.toLowerCase();
-    const categoryFilter = document.getElementById('filterCategory').value;
+    //get all existing categories from items and populate category filter dropdown
+    const categoryFilterSelect = document.getElementById('filterCategory');
+    // check if category filter select has options, if not populate it with categories from items
+    if(categoryFilterSelect.options.length <= 1) {
+    const categories = [...new Set(allItems.map(item => item.category).filter(cat => cat))];
+    categoryFilterSelect.innerHTML = '<option value="">All Categories</option>' + categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+
+    }
+    const categoryFilter = categoryFilterSelect.value;
 
     if (searchTerm) {
         filteredItems = filteredItems.filter(item => 
@@ -2035,6 +2043,8 @@ function openEditPrice(itemId) {
     document.getElementById('editCurrentPrice').value =  parseFloat(item.price).toFixed(2);
     document.getElementById('editCurrentCurrency').value = item.currency || 'EUR';
     document.getElementById('editNewPrice').value = item.price;
+    document.getElementById('editItemFlag').value = item.flag || 'general';
+    document.getElementById('editItemCategory').value = item.category || '';
 
     document.getElementById('editPriceModal').classList.add('active');
 }
@@ -2050,12 +2060,15 @@ document.getElementById('editPriceForm').addEventListener('submit', async functi
     const itemCode = document.getElementById('editItemCode').value;
     const itemName = document.getElementById('editItemName').value;
     const newCurrency = document.getElementById('editNewCurrency').value;
+    const itemFlag = document.getElementById('editItemFlag').value;
+    
+    const itemCategory = document.getElementById('editItemCategory').value;
 
-    const result = await apiRequest(`/items/${itemId}/price`, 'PUT', { price: newPrice, name: itemName, code: itemCode, currency: newCurrency });
+    const result = await apiRequest(`/items/${itemId}/price`, 'PUT', { price: newPrice, name: itemName, code: itemCode, currency: newCurrency, flag:itemFlag, category:itemCategory });
 
     if (result.success) {
         showAlert('priceAlert', result.message, 'success');
-        allItems = allItems.map(item => item._id.toString() === itemId ? { ...item, price: newPrice, currency: newCurrency, name: itemName, code: itemCode } : item);
+        allItems = allItems.map(item => item._id.toString() === itemId ? { ...item, price: newPrice, currency: newCurrency, name: itemName, code: itemCode, flag: itemFlag, category: itemCategory } : item);
        showNotification(`Item ${itemName} updated to ${newCurrency} ${newPrice.toFixed(2)}`, 'success');
         setTimeout(() => {
             closeModal('editPriceModal');
