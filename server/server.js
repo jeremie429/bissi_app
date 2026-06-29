@@ -19,11 +19,14 @@ const { createWorker } = require ('tesseract.js');
 const {MongoClient} = require('mongodb');
 const {ObjectId} = require('mongodb');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 
 const uri = process.env.MONGODB_URI;
 
 const app = express();
 const PORT = 3000;
+
+const JWT_SECRET = process.env.JWT_SECRET || 'bissi_default_secret';
 
 const client = new MongoClient(uri);
 
@@ -271,6 +274,7 @@ const userSchema = {
             unit: String,
             price: Number,
             flag: String,
+            currency: String,
             description: String,
             created_at: Date,
             updated_at: Date
@@ -318,6 +322,49 @@ async function initializetMongoDatabase() {
 
 // ==================== AUTH ROUTES ====================
 
+/*// Token authentication middleware
+function authenticateToken(req, res, next) {
+    const auth = req.headers['authorization'] || req.headers['Authorization'];
+    if (!auth) return res.status(401).json({ success: false, message: 'No authorization header' });
+    const parts = auth.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ success: false, message: 'Invalid authorization format' });
+    const token = parts[1];
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        req.user = payload;
+        next();
+    } catch (e) {
+        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
+}
+*/
+/*// Return authenticated user info
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.user;
+        await client.connect();
+        const db = client.db('bissi_app');
+        const collection = db.collection('users');
+        const mongoUser = await collection.findOne({ _id: new ObjectId(id) });
+        if (!mongoUser) return res.status(404).json({ success: false, message: 'User not found' });
+        const user = { id: mongoUser._id, name: mongoUser.name, email: mongoUser.email, role: mongoUser.role };
+        res.json({ success: true, user });
+    } catch (error) {
+        console.error('auth/me error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Simple validate route
+app.get('/api/auth/validate', authenticateToken, (req, res) => {
+    return res.json({ success: true, user: req.user });
+});*/
+
+/*// Alias
+app.get('/api/me', authenticateToken, (req, res) => {
+    return res.json({ success: true, user: req.user });
+});*/
+
 // Login
 app.post('/api/login', async (req, res) => {
     try {
@@ -352,9 +399,11 @@ app.post('/api/login', async (req, res) => {
                         email: mongoUser.email,
                         role: mongoUser.role
                     }
+                    // Generate JWT token
+                   // const token = jwt.sign({ id: mongoUser._id.toString(), email: mongoUser.email, role: mongoUser.role }, JWT_SECRET, { expiresIn: '7d' });
                     res.json({
                         success: true,
-                        user: user
+                        user: { ...user}
                     });
                     console.log('✓ User logged in:', email);
            } catch (error) {
@@ -454,7 +503,7 @@ app.post('/api/register', async (req, res) => {
 // Get all items
 app.get('/api/items', async (req, res) => {
     try {
-        const { flag } = req.query;
+        const { flag, currency } = req.query;
        /* let sql = 'SELECT * FROM items';
         const params = [];
         
@@ -468,8 +517,11 @@ app.get('/api/items', async (req, res) => {
             await client.connect();
         const db = client.db('bissi_app');
         const collection = db.collection('items');
+        let params = {}
+        if(flag) params.flag = flag
+        if(currency) params.currency = currency
         // get items sorted by name field
-        const items = await collection.find(flag ? { flag: flag } : {}).sort({ name: 1 }).toArray();
+        const items = await collection.find(params).sort({ name: 1 }).toArray();
 
         //const [items] = await pool.execute(sql, params);
         res.json({ success: true, items });

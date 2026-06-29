@@ -19,6 +19,7 @@
     "pdf-parse": "^2.4.5",
     "pdf2image": "^1.2.3",
     "tesseract.js": "^7.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "jsonwebtoken": "^9.0.0"
   }
 }

@@ -9,9 +9,19 @@ const API_URL = 'https://bissi-app-server.vercel.app/api';
 
 // Global variables
 let currentUser = null;
+let quoteCurrency = ""
 let currentQuote = [];
 let currentPage = 1;
 let quotationFlag = ''; // Current flag filter for quotations
+let excelEditState = {
+    workbook: null,
+    sheetName: '',
+    headerRowIndex: 0,
+    originalFileName: '',
+    fileHandle: null,
+    originalBytes: null,
+    mapping: null
+}; // Store mapping/workbook state for edit flow
 const itemsPerPage = 10;
 let itemSearchTimer = null; // Timer for item search debouncing
 
@@ -30,11 +40,20 @@ async function apiRequest(endpoint, method = 'GET', data = null) {
             'Content-Type': 'application/json'
         }
     };
-    
+
+    // Attach auth token if available in currentUser
+   /* try {
+        if (currentUser && currentUser.token) {
+            options.headers['Authorization'] = 'Bearer ' + currentUser.token;
+        }
+    } catch (e) {
+        // ignore
+    }*/
+
     if (data) {
         options.body = JSON.stringify(data);
     }
-    
+
     const response = await fetch(`${API_URL}${endpoint}`, options);
     return await response.json();
 }
@@ -117,146 +136,45 @@ document.getElementById('signupForm').addEventListener('submit', async function(
  */
 function showAlert(alertId, message, type) {
     const alert = document.getElementById(alertId);
+    if (!alert) return;
     alert.textContent = message;
     alert.className = 'alert alert-' + type;
     alert.style.display = 'block';
     setTimeout(() => { alert.style.display = 'none'; }, 5000);
 }
 
-/**
- * Show floating notification
- * @param {string} message - The message to display
- * @param {string} type - The type of notification (success, error, warning, info)
- */
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
-        <span>${message}</span>
-        <button class="notification-close" onclick="this.parentElement.remove()">&times;</button>
-    `;
-
-    // Add to page
-    document.body.appendChild(notification);
-
-    // Auto remove after 4 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 4000);
-}
-
-// ==================== DASHBOARD ====================
-
-/**
- * Show dashboard after successful login
- */
-async function showDashboard() {
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('signupPage').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
-    
-    const user = JSON.parse(localStorage.getItem('sc_currentUser'));
-    document.getElementById('userName').textContent = user.name;
-    document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
-    document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
-    
-    document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', { 
-        year: 'numeric', month: 'long', day: 'numeric' 
-    });
-    
-    await updateDashboardStats();
-    await renderRecentItems();
-    await renderItemsTable();
-    await initInvoiceForm();
-    await initFlagsByDb()
-}
-
-function initFlagsByDb() {
-    apiRequest('/flags').then(result => {
-        if (result.success) {
-            const flagSelect = document.getElementById('quotationFlag');
-           
-            flagSelect.innerHTML = '<option value="">All Flags</option>';
-            result.flags.forEach(flag => {
-                const option = document.createElement('option');
-                option.value = flag;
-                option.textContent = flag;
-                flagSelect.appendChild(option);
-             
-            });
-        }
-    });
-}
-
-/**
- * Logout user and redirect to login
- */
-function logout() {
-    localStorage.removeItem('sc_currentUser');
-    currentUser = null;
-    document.getElementById('dashboard').style.display = 'none';
-    document.getElementById('loginPage').style.display = 'flex';
-    document.getElementById('loginForm').reset();
-}
-
-/**
- * Update dashboard statistics
- */
-async function updateDashboardStats() {
-    const result = await apiRequest('/stats');
-    
-    if (result.success) {
-        document.getElementById('totalItems').textContent = result.stats.totalItems;
-        document.getElementById('totalQuotes').textContent = result.stats.totalQuotes;
-        document.getElementById('totalUsers').textContent = result.stats.totalUsers;
-       // document.getElementById('totalValue').textContent =  + parseFloat(result.stats.totalValue).toFixed(2);
-    }
-}
-
-/**
- * Render recent items in dashboard
- */
-async function renderRecentItems() {
-    const result = await apiRequest('/items');
-    const tbody = document.getElementById('recentItemsTable');
-    
-    if (!result.success || result.items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No items yet</td></tr>';
-        return;
-    }
-    
-    const recentItems = result.items.slice(0, 5);
-    
-    tbody.innerHTML = recentItems.map(item => `
-        <tr>
-            <td><strong>${item.code}</strong></td>
-            <td>${item.name}</td>
-            <td><span class="category-tag">${item.category}</span></td>
-            <td>${item.unit}</td>
-            <td class="price-cell">${parseFloat(item.price).toFixed(2)} ${item.currency}</td>
-        </tr>
-    `).join('');
-}
-
 // ==================== TAB NAVIGATION ====================
 
 /**
- * Initialize tab navigation
+ * Initialize tab navigation using event delegation for robustness
  */
-document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', function() {
-        const tabId = this.getAttribute('data-tab');
-        
+const sidebarNav = document.querySelector('.sidebar-nav');
+if (sidebarNav) {
+    sidebarNav.addEventListener('click', (ev) => {
+        const navItem = ev.target.closest('.nav-item');
+        if (!navItem) return;
+
+        const tabId = navItem.getAttribute('data-tab');
+        if (!tabId) {
+            console.warn('Navigation item clicked but no data-tab attribute found');
+            return;
+        }
+
+        const tabEl = document.getElementById(tabId);
+        if (!tabEl) {
+            console.warn(`Tab element not found for id: ${tabId}`);
+            return;
+        }
+
+        // Update active nav item
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-        this.classList.add('active');
-        
+        navItem.classList.add('active');
+
+        // Show the selected tab and hide others
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
-        
+        tabEl.classList.add('active');
+
+        // Update page title mapping if available
         const titles = {
             'dashboard-home': 'Dashboard',
             'insert-item': 'Insert Item',
@@ -265,13 +183,16 @@ document.querySelectorAll('.nav-item').forEach(item => {
             'invoice-history': 'Invoice History',
             'view-items': 'View Items'
         };
-        document.getElementById('pageTitle').textContent = titles[tabId];
+        if (titles[tabId]) document.getElementById('pageTitle').textContent = titles[tabId];
+
         if (tabId === 'invoice-history') {
             renderInvoiceHistory();
         }
-        toggleSidebar(); // Close sidebar on mobile after selecting a tab
+
+        // Close sidebar on mobile after selecting a tab
+        toggleSidebar();
     });
-});
+}
 
 /**
  * Toggle sidebar on mobile
@@ -652,26 +573,1384 @@ function downloadTemplate() {
     XLSX.writeFile(wb, 'Quotation_Template.xlsx');
 }
 
-/**
- * Handle Excel file upload
- * @param {Event} event - The change event from file input
- */
-async function handleExcelUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+
+// 1. PROTECTION-AWARE LOADER
+async function handleQuotationUpload() {
+    if (!window.showOpenFilePicker) {
+        showAlert('quoteAlert', 'Your browser does not support direct save back to the original Excel file. Use Chrome or Edge.', 'warning');
+        return;
+    }
+
+    try {
+        const handles = await window.showOpenFilePicker({
+            multiple: false,
+            types: [{
+                description: 'Excel Files',
+                accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+            }]
+        });
+
+        if (!handles || handles.length === 0) return;
+        const handle = handles[0];
+
+        // Explicitly request write privileges while inside the user click callback
+        const opts = { mode: 'readwrite' };
+        if ((await handle.queryPermission(opts)) !== 'granted') {
+            if ((await handle.requestPermission(opts)) !== 'granted') {
+                showAlert('quoteAlert', 'Write permission denied. Cannot save edits back to this file.', 'error');
+                return;
+            }
+        }
+
+        const file = await handle.getFile();
+        const array = await file.arrayBuffer();
+        const safeUint8Buffer = new Uint8Array(array);
+
+        // USE EXCELJS TO READ: Bypasses cell-lock blocks and reads protected arrays
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(safeUint8Buffer);
+
+        if (workbook.worksheets.length === 0) {
+            showAlert('quoteAlert', 'Empty or invalid Excel sheet structure.', 'error');
+            return;
+        }
+
+        // Target the first active worksheet
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+
+        // Convert the ExcelJS protected layout into flat native matrix arrays manually
+        const flatRows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row) => {
+            const flatRow = [];
+            // Read up to column 50 sequentially to ensure list filters aren't dropped
+            for (let colIdx = 1; colIdx <= 50; colIdx++) {
+                const cell = row.getCell(colIdx);
+                // Extract underlying text string value or formula outcomes safely
+                const val = cell.value;
+                if (val && typeof val === 'object' && val.result !== undefined) {
+                    flatRow.push(val.result); // Get evaluated formula strings
+                } else {
+                    flatRow.push(val ?? '');
+                }
+            }
+            flatRows.push(flatRow);
+        });
+
+        const { headerRowIndex, detectedHeaders, row } = detectExcelHeaderRow(flatRows);
+
+        // Retain state parameters for the injector step
+        excelEditState = {
+            workbook: workbook, // Save the parsed ExcelJS instance directly
+            sheetName: sheetName,
+            headerRowIndex: headerRowIndex,
+            originalFileName: file.name,
+            fileHandle: handle,
+            originalBytes: array,
+            mapping: null,
+            row
+        };
+
+        // Open your display UI modal using the safely read header values
+        openExcelMappingModal(detectedHeaders, workbook, sheetName, headerRowIndex, file.name);
+    } catch (error) {
+        if (error.name === 'AbortError') return;
+        console.error('Quotation upload error:', error);
+        showAlert('quoteAlert', 'Failed to open protected file: ' + (error.message || error), 'error');
+    }
+}
+
+// 2. STABLE MATRIX KEYWORD SCANNER
+function detectExcelHeaderRow(rows) {
+   // const HEADER_KEYWORDS = ['description','designation','item description','item name','product','qty','quantity', 'qnty','unit price','unit','price','total','amount'];
+    const HEADER_KEYWORDS = [
+        {name : 'description', value:'designation'},
+        {name : 'designation', value:'designation'},
+        {name : 'item description', value:'designation'},
+        {name : 'item name', value:'designation'},
+        {name : 'product', value:'designation'},
+        {name : 'qty', value:'quantity'},
+        {name : 'quantity', value:'quantity'},
+        {name : 'qnty', value:'quantity'},
+        {name : 'unit price', value:'unit'},
+        {name : 'unit', value:'unit'},
+        {name : 'price', value:'unit price'},
+        {name : 'u.price', value:'unit price'},
+        {name : 'unit price', value:'unit price'},
+        {name : 'total', value:'cost'},
+        {name : 'cost', value:'cost'},
+        {name : 'amount', value:'cost'},
+        {name : 'total amount', value:'cost'},
+        
+        
+    ]
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return { headerRowIndex: 0, detectedHeaders: [] };
+    }
+
+    const scanLimit = Math.min(rows.length, 70);
+
+    for (let r = 0; r < scanLimit; r++) {
+        const row = rows[r] || [];
+        const cells = row.map(c => String(c ?? '').toLowerCase().trim());
+        let score = 0;
+
+        let picked = []
+        for (const cellText of cells) {
+            if (!cellText) continue;
+            
+            for (const kw of HEADER_KEYWORDS) {
+                if (cellText.includes(kw.name)) 
+                    {
+                        
+                        
+                        if(picked.includes(kw.value))continue
+                    picked.push(kw.value)
+                   // console.log({picked})
+                    //console.log({cellText})
+                    score++;
+                    break;
+                }
+            }
+        }
+
+        if (score >= 2) {
+            //console.log({row})
+            return {
+                headerRowIndex: r,
+                detectedHeaders: row.map(h => String(h ?? '').trim()),
+                row
+            };
+        }
+    }
+
+    const fallbackRow = rows[0] || [];
+    return {
+        headerRowIndex: 0,
+        detectedHeaders: fallbackRow.map(h => String(h ?? '').trim())
+    };
+}
+
+// 3. PROTECTION-BYPASS WRITER
+
+async function writeWorkbookToHandle(editedRowsMatrix, handle, originalBytes) {
+    let writable;
+    try {
+        // Request immediate File System output connection stream access
+        writable = await handle.createWritable({ keepExistingData: true });
+
+        // Retrieve the live ExcelJS memory workbook instance directly from state 
+        // This ensures protection structural mappings are already unzipped and loaded
+        const templateWorkbook = excelEditState.workbook;
+        const worksheet = templateWorkbook.getWorksheet(excelEditState.sheetName);
+
+        // Temporarily turn off protection validation checks during string array injection
+        const originalSheetProtection = worksheet.sheetProtection;
+        worksheet.sheetProtection = null;
+
+        // Loop through the data changes you mapped from your modal UI grid layout
+        editedRowsMatrix.forEach((rowValues, zeroBasedRowIndex) => {
+            const targetExcelRowIndex = zeroBasedRowIndex + 1; // Excel is 1-indexed
+            const excelRow = worksheet.getRow(targetExcelRowIndex);
+
+            rowValues.forEach((newValue, zeroBasedColIndex) => {
+                const targetExcelColIndex = zeroBasedColIndex + 1;
+                const cell = excelRow.getCell(targetExcelColIndex);
+
+                 if (cell && cell.value !== undefined && cell.value !== null) {
+                    // Check A: Object-type formulas (e.g., { formula: 'A1*B1', result: 10 })
+                    if (typeof cell.value === 'object' && cell.value.formula) {
+                        return; // 🛑 SKIP! Do not modify formula structures
+                    }
+
+                    // Check B: Native/Shared formulas context configurations
+                    if (cell.type === ExcelJS.ValueType.Formula) {
+                        return; // 🛑 SKIP! Do not overwrite formula object mappings
+                    }
+
+                    // Check C: Text representation equations safeguards
+                    const currentStringVal = String(cell.value).trim();
+                    if (currentStringVal.startsWith('=')) {
+                        return; // 🛑 SKIP! Guard string literals treated as calculations
+                    }
+                }
+
+                // INJECT RAW VALUES directly behind the protection layer
+                cell.value = newValue;
+            });
+        });
+
+        // Re-apply original sheet protection configurations
+        if (originalSheetProtection) {
+            worksheet.sheetProtection = originalSheetProtection;
+        }
+
+        // ================= STRATEGY 1 IMPLEMENTATION =================
+        // Ensure workbook application view states are initialized
+        if (!templateWorkbook.views || templateWorkbook.views.length === 0) {
+            templateWorkbook.views = [
+                {
+                    x: 0, y: 0, width: 10000, height: 20000,
+                    firstSheet: 0, activeTab: 0, visibility: 'visible'
+                }
+            ];
+        }
+        
+        // Ensure calcProperties structure exists, then flag it to trigger formula updates on open
+        if (!templateWorkbook.calcProperties) {
+            templateWorkbook.calcProperties = {};
+        }
+        templateWorkbook.calcProperties.fullCalcOnLoad = true;
+        // =============================================================
+
+        // Export data stream back onto target system hard disk paths
+        const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        if (writable) {
+            try { await writable.close(); } catch (_) {}
+        }
+        return false;
+    }
+}
+
+
+
+
+/*
+async function handleQuotationUpload() {
+    if (!window.showOpenFilePicker) {
+        showAlert('quoteAlert', 'Your browser does not support direct save back to the original Excel file. Use Chrome or Edge.', 'warning');
+        return;
+    }
+
+    try {
+        const handles = await window.showOpenFilePicker({
+            multiple: false,
+            types: [{
+                description: 'Excel Files',
+                accept: {
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+                    'application/vnd.ms-excel': ['.xls']
+                }
+            }]
+        });
+
+        if (!handles || handles.length === 0) {
+            return;
+        }
+
+        const handle = handles[0];
+
+        // --- CRITICAL SECURITY FIX FOR IN-PLACE WRITING ---
+        // Explicitly verify and request write permission right inside the user click context
+        const opts = { mode: 'readwrite' };
+        if ((await handle.queryPermission(opts)) !== 'granted') {
+            if ((await handle.requestPermission(opts)) !== 'granted') {
+                showAlert('quoteAlert', 'Write permission denied. Cannot save edits back to this file.', 'error');
+                return;
+            }
+        }
+        // --------------------------------------------------
+
+        const file = await handle.getFile();
+        const array = await file.arrayBuffer();
+        
+        const workbook = XLSX.read(new Uint8Array(array), { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet);
 
-        processQuotation(jsonData);
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        range.s.r = 0;
+        range.s.c = 0;
+
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true, defval: "", range: range });
+
+        if (!rows || rows.length === 0) {
+            showAlert('quoteAlert', 'Empty or invalid Excel sheet', 'error');
+            return;
+        }
+
+        const { headerRowIndex, detectedHeaders } = detectExcelHeaderRow(rows);
+        
+        excelEditState = {
+            workbook,
+            sheetName,
+            headerRowIndex,
+            originalFileName: file.name,
+            fileHandle: handle,
+            originalBytes: array, // This is your clean Excel template array
+            mapping: null
+        };
+
+        openExcelMappingModal(detectedHeaders, workbook, sheetName, headerRowIndex, file.name);
+    } catch (error) {
+        if (error.name === 'AbortError') return;
+        console.error('Quotation upload error:', error);
+        showAlert('quoteAlert', 'Failed to open Excel file: ' + (error.message || error), 'error');
+    }
+}*/
+
+/*
+async function handleQuotationUpload() {
+    if (!window.showOpenFilePicker) {
+        showAlert('quoteAlert', 'Your browser does not support direct save back to the original Excel file. Use Chrome or Edge.', 'warning');
+        return;
+    }
+
+    try {
+        const handles = await window.showOpenFilePicker({
+            multiple: false,
+            types: [{
+                description: 'Excel Files',
+                accept: {
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+                    'application/vnd.ms-excel': ['.xls']
+                }
+            }]
+        });
+
+        if (!handles || handles.length === 0) {
+            return;
+        }
+
+        const handle = handles[0];
+        const file = await handle.getFile();
+        const array = await file.arrayBuffer();
+
+        // 3. Initialize ExcelJS and load the byte stream
+        // (Ensure ExcelJS script is loaded in your project)
+       // const workbook = new ExcelJS.Workbook();
+        //await workbook.xlsx.load(array);
+        
+        const workbook = XLSX.read(new Uint8Array(array), { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // 2. Decode the existing worksheet boundary range
+    // 2. Decode the existing worksheet boundary range
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+
+    // 3. Force the starting row (s.r) and starting column (s.c) back to 0 (A1)
+    range.s.r = 0;
+    range.s.c = 0;
+
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true, defval: "", range: range });
+            //console.log({rowsLength : rows.length})
+
+            if (!rows || rows.length === 0) {
+                showAlert('quoteAlert', 'Empty or invalid Excel sheet', 'error');
+                return;
+            }
+
+            const { headerRowIndex, detectedHeaders } = detectExcelHeaderRow(rows);
+            excelEditState = {
+                workbook,
+                sheetName,
+                headerRowIndex,
+                originalFileName: file.name,
+                fileHandle: handle,
+                originalBytes: array,
+                mapping: null
+            };
+
+            openExcelMappingModal(detectedHeaders, workbook, sheetName, headerRowIndex, file.name);
+        } catch (error) {
+            // Ignore user cancellation (AbortError)
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('Quotation upload error:', error);
+            showAlert('quoteAlert', 'Failed to open Excel file: ' + (error.message || error), 'error');
+        }
+}*/
+/*
+function detectExcelHeaderRow(rows) {
+    const HEADER_KEYWORDS = ['description','designation','item description','item name','product','qty','quantity', 'qnty','unit price','unit','price','total','amount','currency'];
+    
+    // Ensure rows is a valid array, otherwise stop early
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return { headerRowIndex: 0, detectedHeaders: [] };
+    }
+
+    const scanLimit = Math.min(rows.length, 70);
+
+    for (let r = 0; r < scanLimit; r++) {
+        // FIX: Handle sparse arrays/empty row positions caused by list filter boundaries
+        const rawRow = rows[r];
+        if (!rawRow) continue; 
+
+        // If the row object is parsed as a generic Object instead of an Array, safely convert it
+        const row = Array.isArray(rawRow) ? rawRow : Object.values(rawRow);
+        
+        // Normalize everything into clean string arrays for testing keywords
+        const cells = row.map(c => String(c ?? '').toLowerCase().trim());
+        let score = 0;
+
+        for (const cellText of cells) {
+            // Skip empty cells inside row containers
+            if (!cellText) continue;
+
+            for (const kw of HEADER_KEYWORDS) {
+                // Perfect substring mapping matches filters seamlessly
+                if (cellText.includes(kw)) {
+                    score++;
+                    break; // Jump to next cell once keyword match hits
+                }
+            }
+        }
+
+        // If at least two keywords match, we found our header position row
+        if (score >= 2) {
+            return {
+                headerRowIndex: r,
+                detectedHeaders: row.map(h => String(h ?? '').trim())
+            };
+        }
+    }
+
+    // Fallback block if no explicit layout matched
+    const firstRawRow = rows[0] || [];
+    const fallbackRow = Array.isArray(firstRawRow) ? firstRawRow : Object.values(firstRawRow);
+    
+    return {
+        headerRowIndex: 0,
+        detectedHeaders: fallbackRow.map(h => String(h ?? '').trim())
     };
-    reader.readAsArrayBuffer(file);
+}*/
+
+/*
+function detectExcelHeaderRow(rows) {
+    const HEADER_KEYWORDS = ['description','designation','item description','item name','product','qty','quantity', 'qnty','unit price','unit','price','total','amount','currency'];
+    const scanLimit = Math.min(Array.isArray(rows) ? rows.length : 0, 70);
+
+    for (let r = 0; r < scanLimit; r++) {
+        const row = Array.isArray(rows[r]) ? rows[r] : [];
+        const cells = row.map(c => String(c ?? '').toLowerCase());
+        //console.log({cells})
+        let score = 0;
+
+        for (const cellText of cells) {
+            const normalized = String(cellText ?? '');
+            for (const kw of HEADER_KEYWORDS) {
+                if (typeof kw === 'string' && normalized?.indexOf(kw) !== -1) {
+                  //  console.log({normalized})
+                    score++;
+                    break;
+                }
+            }
+        }
+
+        if (score >= 2) {
+           // console.log({r})
+            return {
+                headerRowIndex: r,
+                detectedHeaders: row.map(h => String(h ?? '').trim())
+            };
+        }
+    }
+
+    const fallbackRow = Array.isArray(rows[0]) ? rows[0] : [];
+    return {
+        headerRowIndex: 0,
+        detectedHeaders: fallbackRow.map(h => String(h ?? '').trim())
+    };
+}*/
+
+function openExcelMappingModal(headers, workbook, sheetName, headerRowIndex = 0, originalFileName = 'Quotation.xlsx') {
+    const modal = document.getElementById('excelMappingModal');
+    const descSel = document.getElementById('mapDescription');
+    const unitSel = document.getElementById('mapUnit');
+    const curSel = document.getElementById('mapCurrency');
+    const priceSel = document.getElementById('mapPrice');
+
+    excelEditState = {
+        workbook,
+        sheetName,
+        headerRowIndex,
+        originalFileName,
+        fileHandle: excelEditState ? excelEditState.fileHandle : null,
+        originalBytes: excelEditState ? excelEditState.originalBytes : null,
+        mapping: null
+    };
+
+    [descSel, unitSel, curSel, priceSel].forEach(s => { s.innerHTML = '<option value="">-- None --</option>'; });
+
+    headers.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = h;
+        [descSel, unitSel, curSel, priceSel].forEach(s => s.appendChild(opt.cloneNode(true)));
+    });
+
+    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
+    const defaults = [
+        { field: descSel, prefs: ['Item Description','Description','Item Name','Designation'] },
+        { field: unitSel, prefs: ['Unit','Item Unit','UOM'] },
+        { field: curSel, prefs: ['Currency','currency'] },
+        { field: priceSel, prefs: ['Unit Price','Price','UnitPrice','Price Item'] }
+    ];
+    defaults.forEach(({ field, prefs }) => {
+        for (const pref of prefs) {
+            const idx = normalizedHeaders.indexOf(pref.toLowerCase());
+            if (idx !== -1) {
+                field.value = headers[idx];
+                break;
+            }
+        }
+    });
+
+    modal.classList.add('active');
+
+    const downloadBtn = document.getElementById('downloadEditCopyBtn');
+    downloadBtn.textContent = 'Auto-fill & Save to File';
+    downloadBtn.classList.remove('btn-success');
+    downloadBtn.classList.add('btn-primary');
+    downloadBtn.onclick = async () => {
+        const mapping = {
+            description: descSel.value,
+            unit: unitSel.value,
+            currency: curSel.value,
+            price: priceSel.value
+        };
+        if (!mapping.description || !mapping.unit || !mapping.price) {
+            showAlert('quoteAlert', 'Please map Description, Unit, and Price columns before saving.', 'error');
+            return;
+        }
+        excelEditState.mapping = mapping;
+        //console.log({excelEditState})
+        closeModal('excelMappingModal');
+        await fillPricesAndSave();
+    };
 }
+
+function escapeXmlValue(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+
+/**
+ * Writes an ExcelJS workbook to a file handle while preserving original images and styling.
+ * @param {ExcelJS.Workbook} workbook - The active ExcelJS workbook instance containing your edits.
+ * @param {FileSystemFileHandle} handle - The native browser file handle.
+ * @param {ArrayBuffer} originalBytes - The raw bytes of the original spreadsheet file.
+ */
+/**
+ * Hybrid function: Takes a SheetJS workbook, reads updates, 
+ * and maps them into an ExcelJS instance using originalBytes to preserve files.
+ */
+/**
+ * Hybrid function: Merges SheetJS changes into ExcelJS, 
+ * explicitly protecting formulas and original formatting from being overwritten.
+ */
+/*
+async function writeWorkbookToHandle(sheetJsWorkbook, handle, originalBytes) {
+    let writable;
+    try {
+        if (!originalBytes || originalBytes.byteLength === 0) {
+            throw new Error("Input template bytes are empty or undefined.");
+        }
+
+        const safeUint8Buffer = new Uint8Array(originalBytes);
+
+        // Verify the file signature is a genuine OpenXML ZIP file (.xlsx)
+        const isXlsx = safeUint8Buffer[0] === 0x50 && safeUint8Buffer[1] === 0x4B && 
+                       safeUint8Buffer[2] === 0x03 && safeUint8Buffer[3] === 0x04;
+
+        if (!isXlsx) {
+            throw new Error("The template data is still encoded in old .xls format. Please use 'Save As .xlsx' inside Excel first.");
+        }
+
+        // FIX: Force the file stream to preserve the existing file data structure 
+        // instead of starting from an empty, blank swap file template.
+        writable = await handle.createWritable({ keepExistingData: true });
+
+        const templateWorkbook = new ExcelJS.Workbook();
+        await templateWorkbook.xlsx.load(safeUint8Buffer);
+
+        if (templateWorkbook.worksheets.length === 0) {
+            throw new Error("ExcelJS parsed the file but found 0 sheets.");
+        }
+
+        // Map data from SheetJS changes onto the ExcelJS structure
+        for (const name of sheetJsWorkbook.SheetNames) {
+            const sheetJsWorksheet = sheetJsWorkbook.Sheets[name];
+            if (!sheetJsWorksheet) continue;
+
+            const excelJsWorksheet = templateWorkbook.getWorksheet(name);
+            if (!excelJsWorksheet) continue;
+
+            Object.keys(sheetJsWorksheet).forEach(cellAddress => {
+                if (cellAddress.startsWith('!')) return; 
+
+                const cellData = sheetJsWorksheet[cellAddress];
+                if (!cellData || cellData.v === undefined) return;
+                if (cellData.f) return; 
+
+                const excelJsCell = excelJsWorksheet.getCell(cellAddress);
+                if (excelJsCell) {
+                    // Injecting only raw text or numbers keeps images, styles, and guards safely untouched
+                    excelJsCell.value = cellData.v;
+                }
+            });
+        }
+
+        // Compile and completely replace file streams
+        const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        await writable.write(blob);
+        await writable.close();
+        
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        if (writable) {
+            try { await writable.close(); } catch (_) {}
+        }
+        return false;
+    }
+}*/
+
+/*
+async function writeWorkbookToHandle(sheetJsWorkbook, handle, originalBytes) {
+    let writable;
+    try {
+        if (!originalBytes || originalBytes.byteLength === 0) {
+            throw new Error("Input template bytes are empty or undefined.");
+        }
+
+        // 1. FIXED DATA LOADER: Wrap raw bytes into an explicit Uint8Array view
+        // ExcelJS can fail or read 0 sheets if given a naked ArrayBuffer pointer.
+        const safeUint8Buffer = new Uint8Array(originalBytes);
+
+        // Verify the file signature is a genuine OpenXML ZIP file (.xlsx)
+        const isXlsx = safeUint8Buffer[0] === 0x50 && safeUint8Buffer[1] === 0x4B && 
+                       safeUint8Buffer[2] === 0x03 && safeUint8Buffer[3] === 0x04;
+
+        if (!isXlsx) {
+            throw new Error("Mismatched Extension. The template data is still encoded in old .xls format. Please use 'Save As .xlsx' inside Excel.");
+        }
+
+        // 2. Request write permissions early to satisfy browser activation
+        writable = await handle.createWritable();
+
+        // 3. Load the data using the safe Uint8Array wrapper
+        const templateWorkbook = new ExcelJS.Workbook();
+        await templateWorkbook.xlsx.load(safeUint8Buffer);
+
+        // Ensure sheets actually successfully loaded
+        if (templateWorkbook.worksheets.length === 0) {
+            throw new Error("ExcelJS parsed the file but found 0 sheets. Ensure the file is not a renamed .xls file.");
+        }
+
+        // 4. Map across SheetJS runtime data structures
+        for (const name of sheetJsWorkbook.SheetNames) {
+            const sheetJsWorksheet = sheetJsWorkbook.Sheets[name];
+            if (!sheetJsWorksheet) continue;
+
+            const excelJsWorksheet = templateWorkbook.getWorksheet(name);
+            if (!excelJsWorksheet) continue;
+
+            Object.keys(sheetJsWorksheet).forEach(cellAddress => {
+                if (cellAddress.startsWith('!')) return; // Skip sheet metadata
+
+                const cellData = sheetJsWorksheet[cellAddress];
+                if (!cellData || cellData.v === undefined) return;
+
+                // PROTECT FORMULAS: Skip if formula fields exist
+                if (cellData.f) return; 
+
+                const excelJsCell = excelJsWorksheet.getCell(cellAddress);
+                if (excelJsCell) {
+                    // Update value; preserves background, shapes, column widths, protection state, and styles
+                    excelJsCell.value = cellData.v;
+                }
+            });
+        }
+
+        // 5. Compile output structure
+        const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        // 6. Stream out to disk
+        await writable.write(blob);
+        await writable.close();
+        
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        if (writable) {
+            try { await writable.close(); } catch (_) {}
+        }
+        return false;
+    }
+}*/
+
+/*
+async function writeWorkbookToHandle(sheetJsWorkbook, handle, originalBytes) {
+    try {
+        if (!originalBytes || originalBytes.byteLength === 0) {
+            throw new Error("Input template bytes are empty or undefined.");
+        }
+
+        const bytesArray = new Uint8Array(originalBytes);
+
+        // Detect File Format Signatures
+        const isXls = bytesArray[0] === 0xD0 && bytesArray[1] === 0xCF && 
+                      bytesArray[2] === 0x11 && bytesArray[3] === 0xE0;
+
+        const isXlsx = bytesArray[0] === 0x50 && bytesArray[1] === 0x4B && 
+                       bytesArray[2] === 0x03 && bytesArray[3] === 0x04;
+
+        // ==========================================
+        // PATH A: LEGACY .XLS (SheetJS In-Place Processing)
+        // ==========================================
+        if (isXls) {
+            // Read template directly via SheetJS (Enabling cellStyles option)
+            const templateBook = XLSX.read(originalBytes, { type: 'array', cellStyles: true });
+
+            // Merge your runtime edits straight into the target template sheet structure
+            sheetJsWorkbook.SheetNames.forEach(name => {
+                const sourceSheet = sheetJsWorkbook.Sheets[name];
+                const targetSheet = templateBook.Sheets[name];
+                if (!sourceSheet || !targetSheet) return;
+
+                Object.keys(sourceSheet).forEach(cellAddress => {
+                    if (cellAddress.startsWith('!')) return; // Ignore sheet metadata
+
+                    const cellData = sourceSheet[cellAddress];
+                    if (!cellData || cellData.v === undefined) return;
+
+                    // PROTECT FORMULAS: Skip if formula fields exist
+                    if (cellData.f) return;
+
+                    // If cell doesn't exist on template yet, initialize it
+                    if (!targetSheet[cellAddress]) {
+                        targetSheet[cellAddress] = { t: cellData.t || 's' };
+                    }
+
+                    // Update value without stripping structural metadata references
+                    targetSheet[cellAddress].v = cellData.v;
+                    
+                    if (cellData.w !== undefined) {
+                        targetSheet[cellAddress].w = cellData.w;
+                    }
+                });
+            });
+
+            // Write output file. Notice bookType remains 'xls' to preserve legacy core maps
+            const outputBytes = XLSX.write(templateBook, { bookType: 'xls', type: 'array' });
+            const blob = new Blob([outputBytes], { type: 'application/vnd.ms-excel' });
+            
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return true;
+        }
+
+        // ==========================================
+        // PATH B: MODERN .XLSX (ExcelJS Full Engine Retention)
+        // ==========================================
+        if (isXlsx) {
+            const templateWorkbook = new ExcelJS.Workbook();
+            await templateWorkbook.xlsx.load(originalBytes);
+
+            for (const name of sheetJsWorkbook.SheetNames) {
+                const sheetJsWorksheet = sheetJsWorkbook.Sheets[name];
+                if (!sheetJsWorksheet) continue;
+
+                const excelJsWorksheet = templateWorkbook.getWorksheet(name);
+                if (!excelJsWorksheet) continue;
+
+                Object.keys(sheetJsWorksheet).forEach(cellAddress => {
+                    if (cellAddress.startsWith('!')) return;
+
+                    const cellData = sheetJsWorksheet[cellAddress];
+                    if (!cellData || cellData.v === undefined) return;
+                    if (cellData.f) return; 
+
+                    const excelJsCell = excelJsWorksheet.getCell(cellAddress);
+                    if (excelJsCell) {
+                        // Assignment preserves styles, alignments, backgrounds, and conditional formatting rules
+                        excelJsCell.value = cellData.v;
+                    }
+                });
+            }
+
+            const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+            const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return true;
+        }
+
+        throw new Error("Unsupported binary type array signature.");
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        return false;
+    }
+}*/
+
+
+/*
+async function writeWorkbookToHandle(sheetJsWorkbook, handle, originalBytes) {
+    try {
+        // 1. Load original file bytes into ExcelJS to pull styles, images, and formulas
+        const templateWorkbook = new ExcelJS.Workbook();
+        await templateWorkbook.xlsx.load(originalBytes);
+
+        // 2. Map across SheetJS structures
+        sheetJsWorkbook.SheetNames.forEach(name => {
+            const sheetJsWorksheet = sheetJsWorkbook.Sheets[name];
+            if (!sheetJsWorksheet) return;
+
+            const excelJsWorksheet = templateWorkbook.getWorksheet(name);
+            if (!excelJsWorksheet) return;
+
+            // Loop through cell keys (e.g., "A1", "B5")
+            Object.keys(sheetJsWorksheet).forEach(cellAddress => {
+                if (cellAddress.startsWith('!')) return; // Skip metadata keys
+
+                const cellData = sheetJsWorksheet[cellAddress];
+                if (!cellData) return;
+
+                // PROTECT FORMULAS: If the cell naturally contains an Excel formula, 
+                // DO NOT overwrite it. Let the original template handle it natively.
+                if (cellData.f) {
+                    return; 
+                }
+
+                // OPTIONAL OPTIMIZATION: If you are tracking which rows/cells your app edited,
+                // check it here. Otherwise, only write raw text/numbers that do not hold equations.
+                if (cellData.v !== undefined) {
+                    const excelJsCell = excelJsWorksheet.getCell(cellAddress);
+                    
+                    // Natively assigns raw data values (strings, numbers) 
+                    // without wiping out pre-existing column formats, borders, or styles
+                    excelJsCell.value = cellData.v;
+                }
+            });
+        });
+
+        // 3. Compile optimized output buffer
+        const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        return false;
+    }
+}*/
+
+
+/*
+async function writeWorkbookToHandle(sheetJsWorkbook, handle, originalBytes) {
+    try {
+        // 1. Initialize ExcelJS to load your original file styles and images
+        const templateWorkbook = new ExcelJS.Workbook();
+        await templateWorkbook.xlsx.load(originalBytes);
+
+        // 2. Parse your SheetJS data map structures manually
+        sheetJsWorkbook.SheetNames.forEach(name => {
+            const sheetJsWorksheet = sheetJsWorkbook.Sheets[name];
+            if (!sheetJsWorksheet) return;
+
+            const excelJsWorksheet = templateWorkbook.getWorksheet(name);
+            if (!excelJsWorksheet) return;
+
+            // Loop through the SheetJS data cell keys (e.g., "A1", "B5")
+            Object.keys(sheetJsWorksheet).forEach(cellAddress => {
+                // Ignore internal structural metadata keys starting with '!'
+                if (cellAddress.startsWith('!')) return;
+
+                const cellData = sheetJsWorksheet[cellAddress];
+                if (cellData && cellData.v !== undefined) {
+                    // Update only the cell value in the ExcelJS template file
+                    const excelJsCell = excelJsWorksheet.getCell(cellAddress);
+                    excelJsCell.value = cellData.v;
+                }
+            });
+        });
+
+        // 3. Compile output bytes
+        const arrayBuf = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        return false;
+    }
+}*/
+
+
+/*
+async function writeWorkbookToHandle(workbook, handle, originalBytes) {
+    try {
+        // Recalculate sheet ranges to include any newly written cells
+        workbook.SheetNames.forEach(name => {
+            const sheet = workbook.Sheets[name];
+            if (!sheet) return;
+
+            let range = { s: { r: Infinity, c: Infinity }, e: { r: 0, c: 0 } };
+            let hasCell = false;
+
+            Object.keys(sheet).forEach(addr => {
+                if (addr[0] === '!') return;
+                hasCell = true;
+                try {
+                    const { r, c } = XLSX.utils.decode_cell(addr);
+                    if (r < range.s.r) range.s.r = r;
+                    if (c < range.s.c) range.s.c = c;
+                    if (r > range.e.r) range.e.r = r;
+                    if (c > range.e.c) range.e.c = c;
+                } catch (e) { }
+            });
+
+            if (hasCell) {
+                // CRITICAL FIX: Ensure we preserve index 0 for leading blank rows if needed
+                // Forces the start row/col back to 0 so early empty spacing isn't deleted
+                range.s.r = 0;
+                range.s.c = 0;
+                sheet['!ref'] = XLSX.utils.encode_range(range);
+            }
+        });
+
+        // CRITICAL FIX: Pass options to attempt preservation of original styles/structures
+        const arrayBuf = XLSX.write(workbook, { 
+            bookType: 'xlsx', 
+            type: 'array',
+            cellStyles: true,  // Keeps styling rules if they exist in the workbook object
+            bookVitals: true,  // Retains internal workbook metadata structures
+            sheets: workbook.SheetNames // Ensures all structural sheets map across explicitly
+        });
+
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        return false;
+    }
+}*/
+
+
+/*async function writeWorkbookToHandle(workbook, handle, originalBytes) {
+    try {
+        // Recalculate sheet ranges to include any newly written cells
+        workbook.SheetNames.forEach(name => {
+            const sheet = workbook.Sheets[name];
+            if (!sheet) return;
+            // If !ref missing, compute from keys
+            let range = { s: { r: Infinity, c: Infinity }, e: { r: 0, c: 0 } };
+            let hasCell = false;
+            Object.keys(sheet).forEach(addr => {
+                if (addr[0] === '!') return;
+                hasCell = true;
+                try {
+                    const { r, c } = XLSX.utils.decode_cell(addr);
+                    if (r < range.s.r) range.s.r = r;
+                    if (c < range.s.c) range.s.c = c;
+                    if (r > range.e.r) range.e.r = r;
+                    if (c > range.e.c) range.e.c = c;
+                } catch (e) { }
+            });
+            if (hasCell) sheet['!ref'] = XLSX.utils.encode_range(range);
+        });
+
+        const arrayBuf = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([arrayBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (error) {
+        console.error('Error writing workbook to handle:', error);
+        return false;
+    }
+}*/
+
+function setPriceCellValue(sheet, cellAddr, priceValue) {
+    const origCell = sheet[cellAddr];
+    const cellType = typeof priceValue === 'number' ? 'n' : 's';
+
+    if (origCell) {
+        sheet[cellAddr] = {
+            ...origCell,
+            v: priceValue,
+            t: cellType
+        };
+    } else {
+        sheet[cellAddr] = {
+            v: priceValue,
+            t: cellType
+        };
+    }
+}
+
+function updateExcelEditProgress(message, percent) {
+    const container = document.getElementById('excelEditProgressContainer');
+    const text = document.getElementById('excelEditProgressText');
+    const percentText = document.getElementById('excelEditProgressPercent');
+    const bar = document.getElementById('excelEditProgressBar');
+
+    if (!container || !text || !percentText || !bar) return;
+
+    container.style.display = 'block';
+    text.textContent = message;
+    percentText.textContent = `${percent}%`;
+    bar.style.width = `${percent}%`;
+}
+/*
+async function fillPricesAndSave() {
+    if (!excelEditState || !excelEditState.workbook) {
+        showAlert('quoteAlert', 'No quotation file is loaded.', 'error');
+        return;
+    }
+    if (!excelEditState.fileHandle) {
+        showAlert('quoteAlert', 'Unable to save back: file handle is missing. Re-open the file using the upload button.', 'error');
+        return;
+    }
+
+    updateExcelEditProgress('Fetching prices from database...', 5);
+    const flagParam = quotationFlag ? `?flag=${encodeURIComponent(quotationFlag)}` : quoteCurrency ? `?currency=${encodeURIComponent(quoteCurrency)}` : '';
+    if(flagParam !== "" && quoteCurrency !== "") flagParam = `?currency=${encodeURIComponent(quoteCurrency)}`
+
+    const result = await apiRequest(`/items${flagParam}`);
+    if (!result.success) {
+        showAlert('quoteAlert', 'Unable to fetch items from database.', 'error');
+        updateExcelEditProgress('Failed to fetch DB items.', 0);
+        return;
+    }
+
+    const dbItems = result.items || [];
+    updateExcelEditProgress('Filling prices into workbook...', 20);
+
+    const workbook = excelEditState.workbook;
+
+    // Guard check: Ensure the workbook object exists in memory
+    if (!workbook || typeof workbook.getWorksheet !== 'function') {
+        console.error("Workbook instance is missing or incorrectly structured.");
+        return;
+    }
+
+    // Safely target the worksheet using ExcelJS native structure
+    const sheet = workbook.getWorksheet(excelEditState.sheetName);
+
+    // Guard check: Handle cases where the sheet name is missing or corrupted
+    if (!sheet) {
+        console.error(`Worksheet "${excelEditState.sheetName}" could not be found in this workbook layout.`);
+        // Fallback: Try to get the very first sheet if the exact name match fails
+        const fallbackSheet = workbook.worksheets[0];
+        if (!fallbackSheet) {
+            throw new Error("No valid worksheets found in this Excel file layout.");
+        }
+        sheet = fallbackSheet;
+    }
+
+    const rows = [];
+    sheet.eachRow({ includeEmpty: true }, (row) => {
+    const flatRow = [];
+    
+    // Scan up to column 50 sequentially to ensure hidden/filtered data isn't dropped
+    for (let colIdx = 1; colIdx <= 50; colIdx++) {
+        const cell = row.getCell(colIdx);
+        const val = cell.value;
+        
+        // Handle formula values safely if any headers or cells use equations
+        if (val && typeof val === 'object' && val.result !== undefined) {
+            flatRow.push(val.result); 
+        } else {
+            flatRow.push(val ?? '');
+        }
+    }
+    rows.push(flatRow);
+});*/
+/*
+async function fillPricesAndSave() {
+    if (!excelEditState || !excelEditState.workbook) {
+        showAlert('quoteAlert', 'No quotation file is loaded.', 'error');
+        return;
+    }
+    if (!excelEditState.fileHandle) {
+        showAlert('quoteAlert', 'Unable to save back: file handle is missing. Re-open the file using the upload button.', 'error');
+        return;
+    }
+
+    updateExcelEditProgress('Fetching prices from database...', 5);
+    
+    // Fix block scope variable assignment rule error
+    let flagParam = quotationFlag ? `?flag=${encodeURIComponent(quotationFlag)}` : '';
+    if (quoteCurrency) {
+        flagParam = `?currency=${encodeURIComponent(quoteCurrency)}`;
+    }
+
+    const result = await apiRequest(`/items${flagParam}`);
+    if (!result.success) {
+        showAlert('quoteAlert', 'Unable to fetch items from database.', 'error');
+        updateExcelEditProgress('Failed to fetch DB items.', 0);
+        return;
+    }
+
+    const dbItems = result.items || [];
+    updateExcelEditProgress('Processing database match array...', 20);
+
+    const workbook = excelEditState.workbook;
+    let sheet = workbook.getWorksheet(excelEditState.sheetName);
+
+    if (!sheet) {
+        console.warn(`Worksheet "${excelEditState.sheetName}" not found. Triaging structural fallbacks...`);
+        sheet = workbook.worksheets[0];
+        if (!sheet) {
+            showAlert('quoteAlert', 'No valid worksheets found in this Excel file layout.', 'error');
+            return;
+        }
+    }
+
+    // 1. EXTRACT NATIVE EXCELJS MATRIX
+    const matrixRows = [];
+    sheet.eachRow({ includeEmpty: true }, (row) => {
+        const flatRow = [];
+        // Extract every single cell value up to col index 50 (safeguards filters and locks)
+        for (let colIdx = 1; colIdx <= 50; colIdx++) {
+            const cell = row.getCell(colIdx);
+            const val = cell.value;
+            
+            if (val && typeof val === 'object' && val.result !== undefined) {
+                flatRow.push(val.result); 
+            } else {
+                flatRow.push(val ?? '');
+            }
+        }
+        matrixRows.push(flatRow);
+    });
+
+    updateExcelEditProgress('Injecting pricing rules...', 50);
+
+    // 2. MATCH ITEMS AND POPULATE MATRIX
+    // Retrieve your layout mapping choices from your UI configuration object
+    const mapping = excelEditState.mapping || {}; 
+    const descriptionColIndex = mapping.descriptionColumnIndex; // e.g., 1 for Column B
+    const priceColIndex = mapping.priceColumnIndex;             // e.g., 3 for Column D
+    const headerRowIndex = excelEditState.headerRowIndex;       // Row index where header was found
+
+    // Loop through the data rows starting immediately AFTER the detected header row
+    for (let r = headerRowIndex + 1; r < matrixRows.length; r++) {
+        const currentRow = matrixRows[r];
+        if (!currentRow || descriptionColIndex === undefined || priceColIndex === undefined) continue;
+
+        // Fetch description text securely from the correct index track
+        const excelDescription = String(currentRow[descriptionColIndex] ?? '').trim().toLowerCase();
+        if (!excelDescription) continue;
+
+        // Query match string against fetched DB entities list array
+        const matchedDbItem = dbItems.find(item => {
+            const dbName = String(item.name || item.description || '').trim().toLowerCase();
+            return dbName === excelDescription;
+        });
+
+        if (matchedDbItem) {
+            const newPrice = matchedDbItem.price || matchedDbItem.unit_price || 0;
+            // Update the raw cell text evaluation coordinate in our matrix memory frame
+            matrixRows[r][priceColIndex] = newPrice;
+        }
+    }
+
+    updateExcelEditProgress('Writing changes safely to disk handle...', 80);
+
+    // 3. PASS PROPER MATRIX ARRAY INTO WRITER
+    // By passing 'matrixRows' (which is a valid array), the .forEach error is completely resolved.
+    const saveSuccess = await writeWorkbookToHandle(matrixRows, excelEditState.fileHandle, excelEditState.originalBytes);
+
+    if (saveSuccess) {
+        updateExcelEditProgress('Complete!', 100);
+        showAlert('quoteAlert', 'Quotation workbook saved successfully in-place!', 'success');
+    } else {
+        updateExcelEditProgress('Failed to write outputs.', 0);
+        showAlert('quoteAlert', 'Failed to write pricing rules directly back to the file handle tracking targets.', 'error');
+    }
+}
+*/
+
+async function fillPricesAndSave() {
+    if (!excelEditState || !excelEditState.workbook) {
+        showAlert('quoteAlert', 'No quotation file is loaded.', 'error');
+        return;
+    }
+    if (!excelEditState.fileHandle) {
+        showAlert('quoteAlert', 'Unable to save back: file handle is missing. Re-open the file using the upload button.', 'error');
+        return;
+    }
+
+    updateExcelEditProgress('Fetching prices from database...', 5);
+    
+    // Fix block scope variable assignment rule error
+    let flagParam = quotationFlag ? `?flag=${encodeURIComponent(quotationFlag)}` : '';
+    if (quoteCurrency) {
+        flagParam = `?currency=${encodeURIComponent(quoteCurrency)}`;
+    }
+
+    //console.log({flagParam})
+
+    const result = await apiRequest(`/items${flagParam}`);
+    
+    if (!result.success) {
+        showAlert('quoteAlert', 'Unable to fetch items from database.', 'error');
+        updateExcelEditProgress('Failed to fetch DB items.', 0);
+        return;
+    }
+
+    const dbItems = result.items || [];
+    updateExcelEditProgress('Processing database match array...', 20);
+    //console.log({dbItems})
+    const workbook = excelEditState.workbook;
+    let sheet = workbook.getWorksheet(excelEditState.sheetName);
+
+    if (!sheet) {
+        console.warn(`Worksheet "${excelEditState.sheetName}" not found. Triaging structural fallbacks...`);
+        sheet = workbook.worksheets[0];
+        if (!sheet) {
+            showAlert('quoteAlert', 'No valid worksheets found in this Excel file layout.', 'error');
+            return;
+        }
+    }
+
+    // 1. EXTRACT NATIVE EXCELJS MATRIX
+    const matrixRows = [];
+    sheet.eachRow({ includeEmpty: true }, (row) => {
+        const flatRow = [];
+        //console.log({row})
+        // Extract every single cell value up to col index 50 (safeguards filters and locks)
+        for (let colIdx = 1; colIdx <= 50; colIdx++) {
+            const cell = row.getCell(colIdx);
+            const val = cell.value;
+            
+            if (val && typeof val === 'object' && val.result !== undefined) {
+                flatRow.push(val.result); 
+            } else {
+                flatRow.push(val ?? '');
+            }
+        }
+        matrixRows.push(flatRow);
+    });
+
+    updateExcelEditProgress('Injecting pricing rules...', 50);
+
+    // 2. MATCH ITEMS AND POPULATE MATRIX
+    // Retrieve your layout mapping choices from your UI configuration object
+    const mapping = excelEditState.mapping || {}; 
+     // 2. DYNAMICALLY DETECT COLUMN INDEXES FROM HEADER ROW
+    const headerRowIndex = excelEditState.headerRowIndex; // Row index where headers live
+    const headerRowCells = matrixRows[headerRowIndex] || [];
+
+    // Normalize headers to lowercase strings for bulletproof matching
+    const normalizedHeaders = headerRowCells.map(h => String(h ?? '').toLowerCase().trim());
+
+    // Get the description column name from your mapping state (or default to 'description')
+    const targetDescriptionName = String(excelEditState.mapping?.description || 'description').toLowerCase().trim();
+
+    // Find the exact index of your description column
+    let descriptionColIndex = normalizedHeaders.indexOf(targetDescriptionName);
+
+    // If exact lookup fails, do a flexible substring fallback search
+    if (descriptionColIndex === -1) {
+        descriptionColIndex = normalizedHeaders.findIndex(h => h.includes('description') || h.includes('item') || h.includes('designation'));
+    }
+
+    // Dynamically find the Price column index using your common keywords
+    let priceColIndex = normalizedHeaders.indexOf('unit price');
+    if (priceColIndex === -1) priceColIndex = normalizedHeaders.indexOf('price');
+    if (priceColIndex === -1) priceColIndex = normalizedHeaders.indexOf('amount');
+    if (priceColIndex === -1) {
+        priceColIndex = normalizedHeaders.findIndex(h => h.includes('price') || h.includes('rate'));
+    }
+
+    // Safety check: ensure we actually found the columns before running the loop
+    if (descriptionColIndex === -1 || priceColIndex === -1) {
+        console.error("Mapping Lookup Failed:", { descriptionColIndex, priceColIndex, normalizedHeaders });
+        showAlert('quoteAlert', 'Could not locate matching Description or Price columns in this spreadsheet format.', 'error');
+        updateExcelEditProgress('Mapping failed.', 0);
+        return;
+    }       // Row index where header was found
+   // console.log({descriptionColIndex})
+    // Loop through the data rows starting immediately AFTER the detected header row
+    
+    for (let r = headerRowIndex + 1; r < matrixRows.length; r++) {
+        const currentRow = matrixRows[r];
+        //console.log({currentRow})
+        if (!currentRow || descriptionColIndex === undefined || priceColIndex === undefined) continue;
+       // console.log({descriptionColIndex})
+
+        // Fetch description text securely from the correct index track
+        const excelDescription = String(currentRow[descriptionColIndex] ?? '').trim().toLowerCase();
+       // console.log({excelDescription})
+        if (!excelDescription) continue;
+
+        // Query match string against fetched DB entities list array
+        const matchedDbItem = dbItems.find(item => {
+            const dbName = String(item.name || item.description || '').trim().toLowerCase();
+           // console.log(dbName + "result match with " + excelDescription + "= "+ dbName === excelDescription)
+            return dbName === excelDescription;
+        });
+
+        if (matchedDbItem) {
+            const newPrice = matchedDbItem.price || matchedDbItem.unit_price || 0;
+            // Update the raw cell text evaluation coordinate in our matrix memory frame
+            matrixRows[r][priceColIndex] = newPrice;
+        }else{
+           // console.warn(`No matching DB item found for description: ${excelDescription}`);
+        matrixRows[r][priceColIndex] = 0; // Optionally set to 0 or leave unchanged
+        }
+    }
+
+    updateExcelEditProgress('Writing changes safely to disk handle...', 80);
+
+    // 3. PASS PROPER MATRIX ARRAY INTO WRITER
+    // By passing 'matrixRows' (which is a valid array), the .forEach error is completely resolved.
+    const saveSuccess = await writeWorkbookToHandle(matrixRows, excelEditState.fileHandle, excelEditState.originalBytes);
+
+    if (saveSuccess) {
+        updateExcelEditProgress('Complete!', 100);
+        showAlert('quoteAlert', 'Quotation workbook saved successfully in-place!', 'success');
+    } else {
+        updateExcelEditProgress('Failed to write outputs.', 0);
+        showAlert('quoteAlert', 'Failed to write pricing rules directly back to the file handle tracking targets.', 'error');
+    }
+}
+
+
+      /*  // 2. Decode the existing worksheet boundary range
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+
+// 3. Force the starting row (s.r) and starting column (s.c) back to 0 (A1)
+range.s.r = 0;
+range.s.c = 0;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, range: range, blankrows : true,  defval: ""});*/
+   
 
 function updateQuotationFlag() {
     quotationFlag = document.getElementById('quotationFlag').value;
@@ -681,14 +1960,20 @@ function updateQuotationFlag() {
     }
 }
 
+function updateQuotationCurrency(){
+    quoteCurrency = document.getElementById('quotationCurrency').value;
+}
+
 /**
  * Process quotation data from Excel
  * @param {Array} data - Parsed Excel data
  */
 async function processQuotation(data) {
     // Get all items from database, filtered by flag if selected
-    const flagParam = quotationFlag ? `?flag=${encodeURIComponent(quotationFlag)}` : '';
-    const result = await apiRequest(`/items${flagParam}`);
+    const param = quotationFlag ? `?flag=${encodeURIComponent(quotationFlag)}` : '';
+    if(quoteCurrency !== "" && param !== "") param += `&currency=${encodeURIComponent(quoteCurrency)}`
+    if(quoteCurrenc !== "" && param === "") param = `?currency=${encodeURIComponent(quoteCurrency)}`
+    const result = await apiRequest(`/items?${param}`);
     const dbItems = result.items;
     
     currentQuote = [];
@@ -2443,9 +3728,173 @@ window.addEventListener('load', async function() {
     const user = localStorage.getItem('sc_currentUser');
     if (user) {
         currentUser = JSON.parse(user);
-        await showDashboard();
+
+        await showDashboard()
+        return 
+
+        // Validate the session with backend (try common endpoints). If valid, proceed to dashboard.
+      /*  const validateEndpoints = ['/auth/validate', '/auth/me', '/users/me', '/me'];
+        let valid = false;
+        for (const ep of validateEndpoints) {
+            try {
+                const res = await apiRequest(ep);
+                if (!res) continue;
+                if (res.success || res.user || res.data || res.id) {
+                    valid = true;
+                    break;
+                }
+            } catch (e) {
+                // ignore and try next
+            }
+        }
+
+        if (valid) {
+            try {
+                await showDashboard();
+                return;
+            } catch (e) {
+                console.warn('showDashboard failed:', e);
+            }
+        } else {
+            console.log('Stored session not validated; staying on login page.');
+        }*/
     }
+
+    // Ensure login UI is visible and other pages are hidden on load
+    const loginPage = document.getElementById('loginPage');
+    const signupPage = document.getElementById('signupPage');
+    if (loginPage) loginPage.style.display = 'flex';
+    if (signupPage) signupPage.style.display = 'none';
 });
+
+/**
+ * Show Dashboard view and initialize data
+ * Ensures dashboard-related UI elements are visible and refreshed
+ */
+async function showDashboard() {
+    document.getElementById("loginPage").style.display ='none'
+    document.getElementById('signupPage').style.display = 'none';
+    document.getElementById("dashboard").style.display = "block"
+    try {
+        // Activate dashboard tab if present
+        const dashboardTab = document.getElementById('dashboard-home');
+        if (dashboardTab) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            dashboardTab.classList.add('active');
+        }
+
+        // Mark nav active
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        const dashNav = document.querySelector('.nav-item[data-tab="dashboard-home"]');
+        if (dashNav) dashNav.classList.add('active');
+
+        // Update page title
+        const titleEl = document.getElementById('pageTitle');
+        if (titleEl) titleEl.textContent = 'Dashboard';
+
+        // Refresh dashboard stats and recent items (non-blocking)
+        updateDashboardStats().catch(err => console.warn('updateDashboardStats failed', err));
+        renderRecentItems().catch(err => console.warn('renderRecentItems failed', err));
+        await renderItemsTable();
+        await initInvoiceForm();
+        await initFlagsByDb()
+    } catch (error) {
+        console.error('showDashboard error:', error);
+    }
+}
+function initFlagsByDb() {
+    apiRequest('/flags').then(result => {
+        if (result.success) {
+            const flagSelect = document.getElementById('quotationFlag');
+           
+            flagSelect.innerHTML = '<option value="">All Flags</option>';
+            result.flags.forEach(flag => {
+                const option = document.createElement('option');
+                option.value = flag;
+                option.textContent = flag;
+                flagSelect.appendChild(option);
+             
+            });
+        }
+    });
+}
+
+/**
+ * Update dashboard stats placeholders. Safe no-op if elements missing.
+ */
+async function updateDashboardStats() {
+    try {
+        // Try to fetch stats endpoint if available
+        let stats = null;
+        try {
+            const res = await apiRequest('/stats');
+            if (res && res.success) stats = res.stats || res.data || null;
+        } catch (e) {
+            // ignore - server may not expose /stats
+        }
+
+        // Fill placeholders if present
+        const statsMap = {
+            totalItems: stats?.totalItems ?? null,
+            totalInvoices: stats?.totalInvoices ?? null,
+            totalQuotes: stats?.totalQuotes ?? null,
+            totalUsers: stats?.totalUsers ?? null,
+        };
+
+        Object.keys(statsMap).forEach(key => {
+            const el = document.getElementById(key);
+            if (el && statsMap[key] !== null && statsMap[key] !== undefined) el.textContent = statsMap[key];
+        });
+    } catch (error) {
+        console.error('updateDashboardStats error:', error);
+    }
+}
+
+/**
+ * Render a short list of recent items in the dashboard if UI exists.
+ */
+async function renderRecentItems() {
+    try {
+        const listEl = document.getElementById('recentItemsList');
+        if (!listEl) return;
+
+        let items = [];
+        try {
+            const res = await apiRequest('/items?limit=6');
+            if (res && res.success) items = res.items || [];
+        } catch (e) {
+            // fallback to allItems if populated
+            items = allItems.slice(0, 6);
+        }
+
+        if (!items || items.length === 0) {
+            listEl.innerHTML = '<div class="empty-state">No recent items</div>';
+            return;
+        }
+
+        listEl.innerHTML = items.map(it => `<div class="recent-item"><strong>${it.code}</strong> ${it.name} <span class="price">${parseFloat(it.price||0).toFixed(2)} ${it.currency||''}</span></div>`).join('');
+    } catch (error) {
+        console.error('renderRecentItems error:', error);
+    }
+}
+
+/**
+ * Show small notification. Uses `globalAlert` or falls back to `showAlert` if available.
+ */
+function showNotification(message, type = 'info') {
+    const global = document.getElementById('globalAlert') || document.getElementById('notification');
+    if (global) {
+        global.textContent = message;
+        global.className = 'alert alert-' + (type === 'info' ? 'info' : type);
+        global.style.display = 'block';
+        setTimeout(() => { global.style.display = 'none'; }, 4000);
+    } else if (typeof showAlert === 'function') {
+        // Use quoteAlert as a generic fallback
+        showAlert('quoteAlert', message, type === 'info' ? 'success' : type);
+    } else {
+        console.log(type.toUpperCase() + ':', message);
+    }
+}
 
 // ESC key to close modals
 document.addEventListener('keydown', function(e) {

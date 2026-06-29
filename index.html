@@ -8,9 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- Include the library via cdnjs CDN -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+
+
 </head>
 <body>
     <!-- Background Animation -->
@@ -319,6 +323,16 @@
                             
                         </select>
                     </div>
+                    <div class="form-group" style="max-width: 300px;">
+                        <label><i class="fas fa-flag"></i> Filter by Currency</label>
+                        <select id="quotationCurrency" onchange="updateQuotationCurrency()">
+                            <option value="">All Currencies</option>
+                             <option value="EUR">Euro (EUR)</option>
+                                        <option value="USD">US Dollar (USD)</option>
+                                        <option value="XAF">Central African Franc (XAF)</option>
+                            
+                        </select>
+                    </div>
                 </div>
 
                 <div class="template-section">
@@ -338,13 +352,53 @@
                 <div class="table-container">
                     <h3><i class="fas fa-file-upload"></i> Upload Your Requirements</h3>
                     <div id="quoteAlert" class="alert"></div>
-                    <label class="file-upload" for="excelFile">
+                    <div class="file-upload" style="cursor:pointer;" onclick="handleQuotationUpload()">
                         <i class="fas fa-cloud-upload-alt"></i>
-                        <p>Click to upload Excel file (.xlsx, .xls)</p>
+                        <p>Click to select Excel file (.xlsx, .xls)</p>
                         <p style="font-size: 0.85rem; margin-top: 8px;">Columns: Item Description, Item Unit, Quantity, Currency, Flag</p>
-                    </label>
-                    <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="handleExcelUpload(event)">
+                    </div>
+                    <div id="excelEditProgressContainer" class="progress-container" style="display:none; margin-top: 16px;">
+                        <div class="progress-info">
+                            <span id="excelEditProgressText">Ready to upload quotation file.</span>
+                            <span id="excelEditProgressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div id="excelEditProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
                 </div>
+                    <!-- Excel Mapping Modal -->
+                    <div class="modal-overlay" id="excelMappingModal">
+                        <div class="modal" style="max-width:520px;">
+                            <div class="modal-header">
+                                <h2>Map Excel Columns</h2>
+                                <button class="modal-close" onclick="closeModal('excelMappingModal')">&times;</button>
+                            </div>
+                            <div style="display:grid; gap:12px; margin-top:12px;">
+                                <p style="color:var(--text-secondary);">Select which columns contain the item description, unit, currency and the price column. After mapping, prices will be auto-filled from the database and saved back to the original file.</p>
+                                <div class="form-group">
+                                    <label>Item Description Column</label>
+                                    <select id="mapDescription" style="width:100%; padding:8px;"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Item Unit Column</label>
+                                    <select id="mapUnit" style="width:100%; padding:8px;"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Currency Column (optional)</label>
+                                    <select id="mapCurrency" style="width:100%; padding:8px;"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Price Column (the column to update)</label>
+                                    <select id="mapPrice" style="width:100%; padding:8px;"></select>
+                                </div>
+                                <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="closeModal('excelMappingModal')">Cancel</button>
+                                    <button class="btn btn-primary" id="downloadEditCopyBtn">Auto-fill & Save to File</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                 <!-- PDF Import Section -->
                 <div class="table-container">
